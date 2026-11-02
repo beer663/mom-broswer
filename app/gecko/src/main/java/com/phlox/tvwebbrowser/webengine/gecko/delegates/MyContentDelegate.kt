@@ -1,9 +1,8 @@
+
 package com.phlox.tvwebbrowser.webengine.gecko.delegates
 
-import android.util.Log
 import android.view.PointerIcon
 import com.phlox.tvwebbrowser.model.Download
-import com.phlox.tvwebbrowser.utils.DownloadUtils
 import com.phlox.tvwebbrowser.webengine.gecko.GeckoViewWithVirtualCursor
 import com.phlox.tvwebbrowser.webengine.gecko.GeckoWebEngine
 import com.phlox.tvwebbrowser.webengine.gecko.R
@@ -13,12 +12,10 @@ import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.SlowScriptResponse
 import org.mozilla.geckoview.WebResponse
 
-class MyContentDelegate(private val webEngine: GeckoWebEngine): GeckoSession.ContentDelegate {
-    private var activeAlert: Boolean = false
+class MyContentDelegate(private val webEngine: GeckoWebEngine) :
+    GeckoSession.ContentDelegate {
 
-    companion object {
-        val TAG: String = MyContentDelegate::class.java.simpleName
-    }
+    private var activeAlert: Boolean = false
 
     override fun onTitleChange(session: GeckoSession, title: String?) {
         title?.let { webEngine.callback?.onReceivedTitle(it) }
@@ -29,11 +26,10 @@ class MyContentDelegate(private val webEngine: GeckoWebEngine): GeckoSession.Con
     }
 
     override fun onFocusRequest(session: GeckoSession) {
-        Log.i(TAG, "Content requesting focus")
+        // No action required.
     }
 
     override fun onCloseRequest(session: GeckoSession) {
-        Log.d(TAG, "onCloseRequest")
         webEngine.callback?.closeWindow(session)
     }
 
@@ -55,22 +51,8 @@ class MyContentDelegate(private val webEngine: GeckoWebEngine): GeckoSession.Con
         screenY: Int,
         element: GeckoSession.ContentDelegate.ContextElement
     ) {
-        Log.d(TAG,"onContextMenu screenX="
-                    + screenX
-                    + " screenY="
-                    + screenY
-                    + " type="
-                    + element.type
-                    + " linkUri="
-                    + element.linkUri
-                    + " title="
-                    + element.title
-                    + " alt="
-                    + element.altText
-                    + " srcUri="
-                    + element.srcUri
-        )
         val webView = webEngine.getView() as? GeckoViewWithVirtualCursor ?: return
+
         webEngine.callback?.onContextMenu(
             webView.cursorDrawerDelegate,
             element.baseUri,
@@ -85,8 +67,6 @@ class MyContentDelegate(private val webEngine: GeckoWebEngine): GeckoSession.Con
     }
 
     override fun onExternalResponse(session: GeckoSession, response: WebResponse) {
-        Log.d(TAG, "onExternalResponse: " + response.uri)
-
         if (response.requestExternalApp) {
             webEngine.callback?.onOpenInExternalAppRequested(response.uri)
             return
@@ -95,6 +75,7 @@ class MyContentDelegate(private val webEngine: GeckoWebEngine): GeckoSession.Con
         val contentDisposition = response.headers["content-disposition"]
         val mimetype = response.headers["content-type"]
         val contentLength = response.headers["content-length"]?.toLongOrNull() ?: 0
+
         webEngine.callback?.onDownloadRequested(
             response.uri,
             webEngine.url ?: "",
@@ -110,19 +91,16 @@ class MyContentDelegate(private val webEngine: GeckoWebEngine): GeckoSession.Con
     }
 
     override fun onCrash(session: GeckoSession) {
-        Log.e(TAG, "Crashed, reopening session")
         session.open(GeckoWebEngine.runtime)
     }
 
     override fun onKill(session: GeckoSession) {
         if (webEngine.session != session || !webEngine.tab.selected) {
-            Log.w(TAG, "Background session killed")
             return
         }
 
-        Log.e(TAG, "Current session killed, reopening")
-
         webEngine.session.open(GeckoWebEngine.runtime)
+
         webEngine.progressDelegate.sessionState?.let {
             webEngine.session.restoreState(it)
         } ?: run {
@@ -131,7 +109,7 @@ class MyContentDelegate(private val webEngine: GeckoWebEngine): GeckoSession.Con
     }
 
     override fun onFirstComposite(session: GeckoSession) {
-        Log.d(TAG, "onFirstComposite")
+        // No action required.
     }
 
     override fun onFirstContentfulPaint(session: GeckoSession) {
@@ -147,7 +125,7 @@ class MyContentDelegate(private val webEngine: GeckoWebEngine): GeckoSession.Con
     }
 
     override fun onWebAppManifest(session: GeckoSession, manifest: JSONObject) {
-        Log.d(TAG,"onWebAppManifest: $manifest")
+        // No action required.
     }
 
     override fun onSlowScript(
@@ -156,18 +134,27 @@ class MyContentDelegate(private val webEngine: GeckoWebEngine): GeckoSession.Con
     ): GeckoResult<SlowScriptResponse>? {
         val prompt: MyPromptDelegate? =
             webEngine.session.promptDelegate as? MyPromptDelegate
+
         val activity = webEngine.callback?.getActivity() ?: return null
+
         if (prompt != null) {
             val result = GeckoResult<SlowScriptResponse?>()
+
             if (!activeAlert) {
                 activeAlert = true
-                prompt.onSlowScriptPrompt(geckoSession, activity.getString(R.string.slow_script), result)
+                prompt.onSlowScriptPrompt(
+                    geckoSession,
+                    activity.getString(R.string.slow_script),
+                    result
+                )
             }
+
             return result.then<SlowScriptResponse?> { value: SlowScriptResponse? ->
                 activeAlert = false
                 GeckoResult.fromValue<SlowScriptResponse?>(value)
             }
         }
+
         return null
     }
 
