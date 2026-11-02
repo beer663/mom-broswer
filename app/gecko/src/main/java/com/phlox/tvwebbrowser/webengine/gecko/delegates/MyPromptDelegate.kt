@@ -11,7 +11,6 @@ import android.net.Uri
 import android.os.Build
 import android.text.InputType
 import android.text.format.DateFormat
-import android.util.Log
 import android.view.InflateException
 import android.view.LayoutInflater
 import android.view.View
@@ -38,8 +37,6 @@ class MyPromptDelegate(private val webEngine: GeckoWebEngine): GeckoSession.Prom
     private var filePrompt: FilePrompt? = null
     private var fileResponse: GeckoResult<PromptResponse>? = null
 
-    companion object {
-        val TAG: String = MyPromptDelegate::class.java.simpleName
     }
 
     override fun onAlertPrompt(
@@ -534,7 +531,6 @@ class MyPromptDelegate(private val webEngine: GeckoWebEngine): GeckoSession.Prom
             filePrompt = prompt
             return res
         } else {
-            Log.e(TAG, "Cannot launch activity")
             return GeckoResult.fromValue(prompt.dismiss())
         }
     }
@@ -561,7 +557,6 @@ class MyPromptDelegate(private val webEngine: GeckoWebEngine): GeckoSession.Prom
         session: GeckoSession,
         request: GeckoSession.PromptDelegate.AutocompleteRequest<Autocomplete.LoginSaveOption>
     ): GeckoResult<GeckoSession.PromptDelegate.PromptResponse>? {
-        Log.i(TAG, "onLoginSave")
         return GeckoResult.fromValue(request.confirm(request.options[0]))
     }
 
@@ -576,7 +571,6 @@ class MyPromptDelegate(private val webEngine: GeckoWebEngine): GeckoSession.Prom
         session: GeckoSession,
         request: GeckoSession.PromptDelegate.AutocompleteRequest<Autocomplete.CreditCardSaveOption>
     ): GeckoResult<GeckoSession.PromptDelegate.PromptResponse>? {
-        Log.i(TAG, "onCreditCardSave " + request.options[0].value)
         return null
     }
 
