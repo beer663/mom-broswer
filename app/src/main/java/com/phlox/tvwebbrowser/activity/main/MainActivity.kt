@@ -1292,12 +1292,10 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
         }
 
         override fun onBlockedDialog(newTab: Boolean) {
-            tab.blockedPopups++
-            runOnUiThread {
-                vb.tvBlockedPopupCounter.visibility = if (tab.blockedPopups > 0) View.VISIBLE else View.GONE
-                vb.tvBlockedPopupCounter.text = tab.blockedPopups.toString()
-                val msg = getString(if (newTab) R.string.new_tab_blocked else R.string.popup_dialog_blocked)
-                NotificationView.showBottomRight(vb.rlRoot, R.drawable.ic_block_popups, msg)
+    tab.blockedPopups++
+    runOnUiThread {
+        vb.tvBlockedPopupCounter.visibility = if (tab.blockedPopups > 0) View.VISIBLE else View.GONE
+        vb.tvBlockedPopupCounter.text = tab.blockedPopups.toString()
             }
         }
 
