@@ -1,3 +1,4 @@
+
 plugins {
     id("tvbro.android.application")
     alias(libs.plugins.ksp)
@@ -10,6 +11,10 @@ android {
         applicationId = "com.phlox.tvwebbrowser"
         versionCode = 68
         versionName = "2.1.5"
+
+        ndk {
+            abiFilters += "armeabi-v7a"
+        }
 
         javaCompileOptions {
             annotationProcessorOptions {
@@ -51,7 +56,7 @@ android {
         abi {
             isEnable = project.hasProperty("enableAbiSplits")
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86_64")
+            include("armeabi-v7a")
             isUniversalApk = false
         }
     }
