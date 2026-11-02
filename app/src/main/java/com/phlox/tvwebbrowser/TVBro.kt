@@ -1,3 +1,4 @@
+
 package com.phlox.tvwebbrowser
 
 import android.app.Activity
@@ -6,8 +7,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
 import android.os.Build
-import android.os.Bundle
-import android.util.Log
 import androidx.appcompat.app.AppCompatDelegate
 import com.phlox.tvwebbrowser.activity.main.MainActivity
 import com.phlox.tvwebbrowser.model.HostConfig
@@ -38,34 +37,43 @@ class TVBro : Application(), Application.ActivityLifecycleCallbacks {
 
     var needToExitProcessAfterMainActivityFinish = false
     var needRestartMainActivityAfterExitingProcess = false
+
     override fun onCreate() {
-        Log.i(TAG, "onCreate")
         super.onCreate()
 
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
-            //we need this since when targetSdkVersion >= 33 then
-            //deprecated WebSettingsCompat.setForceDark stops working on android 9 and below
+            // We need this since when targetSdkVersion >= 33 then
+            // deprecated WebSettingsCompat.setForceDark stops working on Android 9 and below.
             applicationInfo.targetSdkVersion = 32
         }
 
         instance = this
 
-        AppContext.init(this, Config(getSharedPreferences(MAIN_PREFS_NAME, MODE_MULTI_PROCESS)))
+        AppContext.init(
+            this,
+            Config(getSharedPreferences(MAIN_PREFS_NAME, MODE_MULTI_PROCESS))
+        )
 
         val maxThreadsInOfflineJobsPool = Runtime.getRuntime().availableProcessors()
-        threadPool = ThreadPoolExecutor(0, maxThreadsInOfflineJobsPool, 20,
-                TimeUnit.SECONDS, ArrayBlockingQueue(maxThreadsInOfflineJobsPool))
+        threadPool = ThreadPoolExecutor(
+            0,
+            maxThreadsInOfflineJobsPool,
+            20,
+            TimeUnit.SECONDS,
+            ArrayBlockingQueue(maxThreadsInOfflineJobsPool)
+        )
 
         initWebEngineStuff()
-
         initNotificationChannels()
-
         ActiveModelsRepository.init(this)
 
         when (AppContext.provideConfig().theme.value) {
-            Config.Theme.BLACK -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
-            Config.Theme.WHITE -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
-            else -> AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+            Config.Theme.BLACK ->
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+            Config.Theme.WHITE ->
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+            else ->
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         }
 
         registerActivityLifecycleCallbacks(this)
@@ -73,21 +81,21 @@ class TVBro : Application(), Application.ActivityLifecycleCallbacks {
 
     @Suppress("KotlinConstantConditions")
     private fun initWebEngineStuff() {
-        Log.i(TAG, "initWebEngineStuff")
-
         try {
             Class.forName("com.phlox.tvwebbrowser.webengine.webview.WebViewWebEngine")
         } catch (e: ClassNotFoundException) {
-            throw AssertionError(e) // WebViews are always available
+            throw AssertionError(e) // WebViews are always available.
         }
+
         try {
             Class.forName("com.phlox.tvwebbrowser.webengine.gecko.GeckoWebEngine")
-        } catch (e: ClassNotFoundException) {
-            Log.w(TAG, "GeckoWebEngine not found")//it is ok
+        } catch (_: ClassNotFoundException) {
+            // GeckoView is optional in some build variants.
         }
 
         val cookieManager = CookieManager()
         CookieHandler.setDefault(cookieManager)
+
         FaviconsPool.databaseDelegate = object : FaviconsPool.DatabaseDelegate {
             override fun findByHostName(host: String): HostConfig? {
                 return AppDatabase.db.hostsDao().findByHostName(host)
@@ -109,8 +117,12 @@ class TVBro : Application(), Application.ActivityLifecycleCallbacks {
             val descriptionText = getString(R.string.downloads_notifications_description)
             val importance = NotificationManager.IMPORTANCE_DEFAULT
             val channel = NotificationChannel(CHANNEL_ID_DOWNLOADS, name, importance)
+
             channel.description = descriptionText
-            val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+
+            val notificationManager =
+                getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+
             notificationManager.createNotificationChannel(channel)
         }
     }
@@ -123,15 +135,15 @@ class TVBro : Application(), Application.ActivityLifecycleCallbacks {
     override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
 
     override fun onActivityDestroyed(activity: Activity) {
-        Log.i(TAG, "onActivityDestroyed: " + activity.javaClass.simpleName)
         if (needToExitProcessAfterMainActivityFinish && activity is MainActivity) {
-            Log.i(TAG, "onActivityDestroyed: exiting process")
             if (needRestartMainActivityAfterExitingProcess) {
-                Log.i(TAG, "onActivityDestroyed: restarting main activity")
                 val intent = Intent(this@TVBro, MainActivity::class.java)
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                intent.addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                )
                 startActivity(intent)
             }
+
             exitProcess(0)
         }
     }
