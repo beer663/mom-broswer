@@ -1,0 +1,41 @@
+name: Import TV Bro 2.1.6 by Copying Files
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download TV Bro 2.1.6
+        uses: actions/checkout@v4
+        with:
+          repository: truefedex/tv-bro
+          ref: a5a9ccbdcd0bb7a667977c4e1ed31d2fd29794c3
+          path: source
+          fetch-depth: 1
+
+      - name: Check out Mom Broswer
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: main
+          path: destination
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Copy the 2.1.6 files
+        run: |
+          rsync -a --delete --exclude='.git' source/ destination/
+
+      - name: Commit and save the imported source
+        run: |
+          cd destination
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Import original TV Bro 2.1.6 source"
+          git push --force origin HEAD:main
