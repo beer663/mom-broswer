@@ -1,3 +1,4 @@
+
 package com.phlox.tvwebbrowser
 
 import android.annotation.SuppressLint
@@ -171,15 +172,14 @@ class Config(val prefs: SharedPreferences) {
 
     var searchEngineURL = ObservableStringPreference(SearchEnginesURLs[0], SEARCH_ENGINE_URL_PREF_KEY)
 
+    // GeckoView is the default browser engine.
     var webEngine: String
         get() {
             if (!prefs.contains(WEB_ENGINE)) {
-                prefs.edit().putString(
-                    WEB_ENGINE, if (canRecommendGeckoView())
-                    SupportedWebEngines[0] else SupportedWebEngines[1]).apply()
+                prefs.edit().putString(WEB_ENGINE, ENGINE_GECKO_VIEW).apply()
             }
 
-            return prefs.getString(WEB_ENGINE, SupportedWebEngines[0])!!
+            return prefs.getString(WEB_ENGINE, ENGINE_GECKO_VIEW)!!
         }
         set(value) {
             prefs.edit().putString(WEB_ENGINE, value).apply()
