@@ -1,3 +1,4 @@
+
 package com.phlox.tvwebbrowser.webengine.gecko
 
 import android.content.Context
@@ -6,7 +7,6 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.view.View
 import android.view.ViewGroup
 import androidx.annotation.UiThread
@@ -48,28 +48,30 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 
-class GeckoWebEngine(val tab: WebTabState): WebEngine,
+class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     CursorDrawerDelegate.Callback {
+
     companion object {
         const val ENGINE_NAME = "GeckoView"
         private const val APP_WEB_EXTENSION_VERSION = 48
         private const val ADGUARD_DNS_URL = "https://dns.adguard-dns.com/dns-query"
+
         val TAG: String = GeckoWebEngine::class.java.simpleName
         lateinit var runtime: GeckoRuntime
         var appWebExtension = ObservableValue<WebExtension?>(null)
-        var weakRefToSingleGeckoView: WeakReference<GeckoViewWithVirtualCursor?> = WeakReference(null)
+        var weakRefToSingleGeckoView: WeakReference<GeckoViewWithVirtualCursor?> =
+            WeakReference(null)
         val uiHandler = Handler(Looper.getMainLooper())
 
         @UiThread
         fun initialize(context: Context, webViewContainer: CursorLayout) {
             if (!this::runtime.isInitialized) {
                 val builder = GeckoRuntimeSettings.Builder()
-                if (AppContext.provideConfig().webEngineDebug) {
-                    builder.remoteDebuggingEnabled(true)
-                    builder.consoleOutput(true)
-                }
+
                 builder.aboutConfigEnabled(true)
-                    .preferredColorScheme(AppContext.provideConfig().theme.value.toGeckoPreferredColorScheme())
+                    .preferredColorScheme(
+                        AppContext.provideConfig().theme.value.toGeckoPreferredColorScheme()
+                    )
                     .forceUserScalableEnabled(true)
                     // Always use AdGuard DNS-over-HTTPS.
                     // TRR_MODE_ONLY prevents fallback to the TV or router's DNS resolver.
@@ -79,78 +81,96 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
                 builder.contentBlocking(
                     ContentBlocking.Settings.Builder()
                         .antiTracking(
-                            ContentBlocking.AntiTracking.DEFAULT or ContentBlocking.AntiTracking.STP)
+                            ContentBlocking.AntiTracking.DEFAULT or
+                                ContentBlocking.AntiTracking.STP
+                        )
                         .safeBrowsing(ContentBlocking.SafeBrowsing.DEFAULT)
                         .cookieBehavior(ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS)
-                        .cookieBehaviorPrivateMode(ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS)
+                        .cookieBehaviorPrivateMode(
+                            ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS
+                        )
                         .enhancedTrackingProtectionLevel(ContentBlocking.EtpLevel.STRICT)
-                        .build())
+                        .build()
+                )
 
                 runtime = GeckoRuntime.create(context, builder.build())
 
-                val webExtInstallResult = if (APP_WEB_EXTENSION_VERSION == AppContext.provideConfig().appWebExtensionVersion) {
-                    Log.d(TAG, "appWebExtension already installed")
-                    runtime.webExtensionController.ensureBuiltIn(
-                        "resource://android/assets/extensions/generic/",
-                        "tvbro@mock.com"
-                    )
-                } else {
-                    Log.d(TAG, "installing appWebExtension")
-                    runtime.webExtensionController.installBuiltIn("resource://android/assets/extensions/generic/")
-                }
+                val webExtInstallResult =
+                    if (APP_WEB_EXTENSION_VERSION ==
+                        AppContext.provideConfig().appWebExtensionVersion
+                    ) {
+                        runtime.webExtensionController.ensureBuiltIn(
+                            "resource://android/assets/extensions/generic/",
+                            "tvbro@mock.com"
+                        )
+                    } else {
+                        runtime.webExtensionController.installBuiltIn(
+                            "resource://android/assets/extensions/generic/"
+                        )
+                    }
 
                 webExtInstallResult.accept({ extension ->
-                    Log.d(TAG, "extension accepted: ${extension?.metaData?.description}")
                     appWebExtension.value = extension
-                    AppContext.provideConfig().appWebExtensionVersion = APP_WEB_EXTENSION_VERSION
-                }
-                ) { e -> Log.e(TAG, "Error registering WebExtension", e) }
+                    AppContext.provideConfig().appWebExtensionVersion =
+                        APP_WEB_EXTENSION_VERSION
+                }) { }
             }
 
             val webView = GeckoViewWithVirtualCursor(context)
             webViewContainer.addView(webView)
             weakRefToSingleGeckoView = WeakReference(webView)
-            webViewContainer.setWillNotDraw(true)//use it only as a container, cursor will be drawn on WebView itself
+            webViewContainer.setWillNotDraw(true)
+            // Use it only as a container; cursor will be drawn on the WebView itself.
         }
 
         fun onThemeSettingUpdated(theme: Config.Theme) {
-            runtime.settings.preferredColorScheme = theme.toGeckoPreferredColorScheme()
+            runtime.settings.preferredColorScheme =
+                theme.toGeckoPreferredColorScheme()
         }
 
         init {
-            WebEngineFactory.registerProvider(WebEngineProvider(ENGINE_NAME, object : WebEngineProviderCallback {
-                override suspend fun initialize(context: Context, webViewContainer: CursorLayout) {
-                    GeckoWebEngine.initialize(context, webViewContainer)
-                }
+            WebEngineFactory.registerProvider(
+                WebEngineProvider(
+                    ENGINE_NAME,
+                    object : WebEngineProviderCallback {
+                        override suspend fun initialize(
+                            context: Context,
+                            webViewContainer: CursorLayout
+                        ) {
+                            GeckoWebEngine.initialize(context, webViewContainer)
+                        }
 
-                override fun createWebEngine(tab: WebTabState): WebEngine {
-                    return GeckoWebEngine(tab)
-                }
+                        override fun createWebEngine(tab: WebTabState): WebEngine {
+                            return GeckoWebEngine(tab)
+                        }
 
-                override suspend fun clearCache(ctx: Context) {
-                    suspendCoroutine { cont ->
-                        runtime.storageController.clearData(StorageController.ClearFlags.ALL_CACHES).then({
-                            cont.resume(null)
-                            GeckoResult.fromValue(null)
-                        }, {
-                            it.printStackTrace()
-                            cont.resumeWithException(it)
-                            GeckoResult.fromValue(null)
-                        })
+                        override suspend fun clearCache(ctx: Context) {
+                            suspendCoroutine { cont ->
+                                runtime.storageController
+                                    .clearData(StorageController.ClearFlags.ALL_CACHES)
+                                    .then({
+                                        cont.resume(null)
+                                        GeckoResult.fromValue(null)
+                                    }, {
+                                        cont.resumeWithException(it)
+                                        GeckoResult.fromValue(null)
+                                    })
+                            }
+                        }
+
+                        override fun onThemeSettingUpdated(value: Config.Theme) {
+                            GeckoWebEngine.onThemeSettingUpdated(value)
+                        }
+
+                        override fun getWebEngineVersionString(): String {
+                            return org.mozilla.geckoview.BuildConfig.LIBRARY_PACKAGE_NAME + ":" +
+                                org.mozilla.geckoview.BuildConfig.MOZ_APP_VERSION + "." +
+                                org.mozilla.geckoview.BuildConfig.MOZ_APP_BUILDID + " - " +
+                                org.mozilla.geckoview.BuildConfig.MOZ_UPDATE_CHANNEL
+                        }
                     }
-                }
-
-                override fun onThemeSettingUpdated(value: Config.Theme) {
-                    GeckoWebEngine.onThemeSettingUpdated(value)
-                }
-
-                override fun getWebEngineVersionString(): String {
-                    return org.mozilla.geckoview.BuildConfig.LIBRARY_PACKAGE_NAME + ":" +
-                            org.mozilla.geckoview.BuildConfig.MOZ_APP_VERSION + "." +
-                            org.mozilla.geckoview.BuildConfig.MOZ_APP_BUILDID + " - " +
-                            org.mozilla.geckoview.BuildConfig.MOZ_UPDATE_CHANNEL
-                }
-            }))
+                )
+            )
         }
     }
 
@@ -173,19 +193,25 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
 
     override val url: String?
         get() = navigationDelegate.locationURL
+
     override var userAgentString: String?
         get() = session.settings.userAgentOverride
-        set(value) { session.settings.userAgentOverride = value }
+        set(value) {
+            session.settings.userAgentOverride = value
+        }
 
     init {
-        Log.d(TAG, "init")
-        session = GeckoSession(GeckoSessionSettings.Builder()
-            .usePrivateMode(AppContext.provideConfig().incognitoMode)
-            .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
-            .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
-            .useTrackingProtection(tab.adblock ?: AppContext.provideConfig().adBlockEnabled)
-            .build()
+        session = GeckoSession(
+            GeckoSessionSettings.Builder()
+                .usePrivateMode(AppContext.provideConfig().incognitoMode)
+                .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
+                .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
+                .useTrackingProtection(
+                    tab.adblock ?: AppContext.provideConfig().adBlockEnabled
+                )
+                .build()
         )
+
         session.navigationDelegate = navigationDelegate
         session.progressDelegate = progressDelegate
         session.contentDelegate = contentDelegate
@@ -208,59 +234,75 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
     }
 
     private fun connectToAppWebExtension(extension: WebExtension) {
-        Log.d(TAG, "connectToAppWebExtension")
-        session.webExtensionController.setMessageDelegate(extension,
+        session.webExtensionController.setMessageDelegate(
+            extension,
             object : MessageDelegate {
-                override fun onMessage(nativeApp: String, message: Any,
-                                       sender: WebExtension.MessageSender): GeckoResult<Any>? {
-                    Log.d(TAG, "onMessage: $nativeApp, $message, $sender")
+                override fun onMessage(
+                    nativeApp: String,
+                    message: Any,
+                    sender: WebExtension.MessageSender
+                ): GeckoResult<Any>? {
                     return null
                 }
 
                 override fun onConnect(port: WebExtension.Port) {
-                    Log.d(TAG, "onConnect: $port")
-                    appContentScriptPortDelegate = AppContentScriptPortDelegate(port, this@GeckoWebEngine).also {
-                        port.setDelegate(it)
-                    }
+                    appContentScriptPortDelegate =
+                        AppContentScriptPortDelegate(port, this@GeckoWebEngine).also {
+                            port.setDelegate(it)
+                        }
                 }
-            }, "tvbro_content"
+            },
+            "tvbro_content"
         )
-        session.webExtensionController.setMessageDelegate(extension,
+
+        session.webExtensionController.setMessageDelegate(
+            extension,
             object : MessageDelegate {
-                override fun onMessage(nativeApp: String, message: Any,
-                                       sender: WebExtension.MessageSender): GeckoResult<Any>? {
-                    Log.d(TAG, "onMessage: $nativeApp, $message, $sender")
+                override fun onMessage(
+                    nativeApp: String,
+                    message: Any,
+                    sender: WebExtension.MessageSender
+                ): GeckoResult<Any>? {
                     return null
                 }
 
                 override fun onConnect(port: WebExtension.Port) {
-                    Log.d(TAG, "onConnect: $port")
-                    appHomeContentScriptPortDelegate = AppHomeContentScriptPortDelegate(port, this@GeckoWebEngine).also {
-                        port.setDelegate(it)
-                    }
+                    appHomeContentScriptPortDelegate =
+                        AppHomeContentScriptPortDelegate(port, this@GeckoWebEngine).also {
+                            port.setDelegate(it)
+                        }
                 }
-            }, "tvbro")
+            },
+            "tvbro"
+        )
 
-        extension.setMessageDelegate(object : MessageDelegate {
-            override fun onMessage(nativeApp: String, message: Any,
-                                   sender: WebExtension.MessageSender): GeckoResult<Any>? {
-                Log.d(TAG, "onMessage: $nativeApp, $message, $sender")
-                return null
-            }
-
-            override fun onConnect(port: WebExtension.Port) {
-                Log.d(TAG, "onConnect: $port")
-                appWebExtensionBackgroundPortDelegate = AppWebExtensionBackgroundPortDelegate(port, this@GeckoWebEngine).also {
-                    port.setDelegate(it)
+        extension.setMessageDelegate(
+            object : MessageDelegate {
+                override fun onMessage(
+                    nativeApp: String,
+                    message: Any,
+                    sender: WebExtension.MessageSender
+                ): GeckoResult<Any>? {
+                    return null
                 }
-            }
-        }, "tvbro_bg")
+
+                override fun onConnect(port: WebExtension.Port) {
+                    appWebExtensionBackgroundPortDelegate =
+                        AppWebExtensionBackgroundPortDelegate(
+                            port,
+                            this@GeckoWebEngine
+                        ).also {
+                            port.setDelegate(it)
+                        }
+                }
+            },
+            "tvbro_bg"
+        )
     }
 
     override fun getWebEngineName(): String = ENGINE_NAME
 
     override fun saveState(): Any? {
-        Log.d(TAG, "saveState")
         progressDelegate.sessionState?.let {
             return it
         }
@@ -268,7 +310,6 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
     }
 
     override fun restoreState(savedInstanceState: Any) {
-        Log.d(TAG, "restoreState")
         if (savedInstanceState is SessionState) {
             progressDelegate.sessionState = savedInstanceState
             if (!session.isOpen) {
@@ -286,24 +327,23 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
     }
 
     override fun loadUrl(url: String) {
-        Log.d(TAG, "loadUrl($url)")
         if (!session.isOpen) {
             session.open(runtime)
         }
+
         if (Config.HOME_URL_ALIAS == url) {
             when (AppContext.provideConfig().homePageMode) {
                 Config.HomePageMode.BLANK -> {
-                    //nothing to do
+                    // Nothing to do.
                 }
-                Config.HomePageMode.CUSTOM, Config.HomePageMode.SEARCH_ENGINE -> {
+
+                Config.HomePageMode.CUSTOM,
+                Config.HomePageMode.SEARCH_ENGINE -> {
                     session.loadUri(AppContext.provideConfig().homePage)
                 }
+
                 Config.HomePageMode.HOME_PAGE -> {
-                    //if (HomePageHelper.homePageFilesReady) {
-                        session.loadUri(Config.HOME_PAGE_URL/*HomePageHelper.HOME_PAGE_URL*/)
-                    //} else {
-                    //    Toast.makeText(TVBro.instance, R.string.error, Toast.LENGTH_SHORT).show()
-                    //}
+                    session.loadUri(Config.HOME_PAGE_URL)
                 }
             }
         } else {
@@ -324,7 +364,6 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
     }
 
     override fun zoomIn() {
-        //appWebExtensionPortDelegate?.port?.postMessage(JSONObject("{\"action\":\"zoomIn\"}"))
         webView?.cursorDrawerDelegate?.tryZoomIn()
     }
 
@@ -333,12 +372,10 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
     }
 
     override fun zoomOut() {
-        //appWebExtensionPortDelegate?.port?.postMessage(JSONObject("{\"action\":\"zoomOut\"}"))
         webView?.cursorDrawerDelegate?.tryZoomOut()
     }
 
     override fun zoomBy(zoomBy: Float) {
-
     }
 
     override fun evaluateJavascript(script: String) {
@@ -346,7 +383,7 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
     }
 
     override fun setNetworkAvailable(connected: Boolean) {
-        //nop
+        // No operation.
     }
 
     override fun getView(): View? {
@@ -354,11 +391,9 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
     }
 
     override fun getOrCreateView(activityContext: Context): View {
-        Log.d(TAG, "getOrCreateView()")
         if (webView == null) {
             val geckoView = weakRefToSingleGeckoView.get()
             webView = if (geckoView == null) {
-                Log.i(TAG, "Creating new GeckoView")
                 val wv = GeckoViewWithVirtualCursor(activityContext)
                 weakRefToSingleGeckoView = WeakReference(wv)
                 wv
@@ -411,7 +446,6 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
     }
 
     override fun onUpdateAdblockSetting(newState: Boolean) {
-
     }
 
     override fun hideFullscreenView() {
@@ -448,56 +482,64 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
         callback: WebEngineWindowProviderCallback,
         parent: ViewGroup
     ) {
-        Log.d(TAG, "onAttachToWindow()")
         this.callback = callback
         val webView = this.webView ?: throw IllegalStateException("WebView is null")
         val previousSession = webView.session
+
         if (previousSession != null && previousSession != session) {
-            Log.d(TAG, "Closing previous session")
             previousSession.setActive(false)
             webView.releaseSession()
         }
+
         webView.coverUntilFirstPaint(Color.WHITE)
         webView.setSession(session)
+
         if (session.isOpen && previousSession != null && previousSession != session) {
-            Log.d(TAG, "Activating session")
             session.setActive(true)
             session.reload()
         }
     }
 
     override fun onDetachFromWindow(completely: Boolean, destroyTab: Boolean) {
-        Log.d(TAG, "onDetachFromWindow()")
         callback = null
         val webView = this.webView
+
         if (webView != null) {
             val session = webView.session
             if (session == this.session) {
-                Log.d(TAG, "Closing session")
                 session.setActive(false)
                 webView.releaseSession()
             }
         }
+
         if (completely) {
             this.webView = null
         }
+
         if (destroyTab) {
-            Log.d(TAG, "Closing session completely")
             mediaSessionDelegate.mediaSession?.stop()
             session.close()
         }
     }
 
     override fun trimMemory() {
-    val currentView = webView
+        val currentView = webView
 
-    if (currentView != null && !currentView.isAttachedToWindow) {
-        webView = null
+        if (currentView != null && !currentView.isAttachedToWindow) {
+            webView = null
+        }
     }
-}
 
-    override fun onPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
-        return permissionDelegate.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    override fun onPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ): Boolean {
+        return permissionDelegate.onRequestPermissionsResult(
+            requestCode,
+            permissions,
+            grantResults
+        )
     }
 
     override fun isSameSession(internalRepresentation: Any): Boolean {
@@ -505,13 +547,23 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
     }
 
     override fun onLongPress(x: Int, y: Int) {
-        // There is a small delay so that if MyContentDelegate.onContextMenu (with more contextual data) is triggered first,
-        // this "second" call will be ignored by the CursorMenuView.
+        // There is a small delay so that if MyContentDelegate.onContextMenu
+        // (with more contextual data) is triggered first, this call will be ignored.
         uiHandler.postDelayed(
             {
-                callback?.onContextMenu(webView!!.cursorDrawerDelegate, navigationDelegate.locationURL,
-                    null, null, null, null, null, x, y)
-            }, 100
+                callback?.onContextMenu(
+                    webView!!.cursorDrawerDelegate,
+                    navigationDelegate.locationURL,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    x,
+                    y
+                )
+            },
+            100
         )
     }
 
