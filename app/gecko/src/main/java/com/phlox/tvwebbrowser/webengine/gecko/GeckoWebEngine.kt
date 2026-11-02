@@ -489,7 +489,12 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
     }
 
     override fun trimMemory() {
+    val currentView = webView
+
+    if (currentView != null && !currentView.isAttachedToWindow) {
+        webView = null
     }
+}
 
     override fun onPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
         return permissionDelegate.onRequestPermissionsResult(requestCode, permissions, grantResults)
