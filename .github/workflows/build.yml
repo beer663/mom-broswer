@@ -2,9 +2,6 @@ name: Build Mom Broswer
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
   build:
