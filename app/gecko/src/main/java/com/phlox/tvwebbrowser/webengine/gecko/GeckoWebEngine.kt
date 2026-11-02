@@ -53,6 +53,7 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
     companion object {
         const val ENGINE_NAME = "GeckoView"
         private const val APP_WEB_EXTENSION_VERSION = 48
+        private const val ADGUARD_DNS_URL = "https://dns.adguard-dns.com/dns-query"
         val TAG: String = GeckoWebEngine::class.java.simpleName
         lateinit var runtime: GeckoRuntime
         var appWebExtension = ObservableValue<WebExtension?>(null)
@@ -70,15 +71,21 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
                 builder.aboutConfigEnabled(true)
                     .preferredColorScheme(AppContext.provideConfig().theme.value.toGeckoPreferredColorScheme())
                     .forceUserScalableEnabled(true)
+                    // Always use AdGuard DNS-over-HTTPS.
+                    // TRR_MODE_ONLY prevents fallback to the TV or router's DNS resolver.
+                    .trustedRecursiveResolverUri(ADGUARD_DNS_URL)
+                    .trustedRecursiveResolverMode(GeckoRuntimeSettings.TRR_MODE_ONLY)
+
                 builder.contentBlocking(
-                        ContentBlocking.Settings.Builder()
-                            .antiTracking(
-                                ContentBlocking.AntiTracking.DEFAULT or ContentBlocking.AntiTracking.STP)
-                    .safeBrowsing(ContentBlocking.SafeBrowsing.DEFAULT)
-                    .cookieBehavior(ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS)
-                    .cookieBehaviorPrivateMode(ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS)
-                    .enhancedTrackingProtectionLevel(ContentBlocking.EtpLevel.STRICT)
-                    .build())
+                    ContentBlocking.Settings.Builder()
+                        .antiTracking(
+                            ContentBlocking.AntiTracking.DEFAULT or ContentBlocking.AntiTracking.STP)
+                        .safeBrowsing(ContentBlocking.SafeBrowsing.DEFAULT)
+                        .cookieBehavior(ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS)
+                        .cookieBehaviorPrivateMode(ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS)
+                        .enhancedTrackingProtectionLevel(ContentBlocking.EtpLevel.STRICT)
+                        .build())
+
                 runtime = GeckoRuntime.create(context, builder.build())
 
                 val webExtInstallResult = if (APP_WEB_EXTENSION_VERSION == AppContext.provideConfig().appWebExtensionVersion) {
@@ -331,7 +338,7 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
     }
 
     override fun zoomBy(zoomBy: Float) {
-        
+
     }
 
     override fun evaluateJavascript(script: String) {
@@ -404,7 +411,7 @@ class GeckoWebEngine(val tab: WebTabState): WebEngine,
     }
 
     override fun onUpdateAdblockSetting(newState: Boolean) {
-        
+
     }
 
     override fun hideFullscreenView() {
