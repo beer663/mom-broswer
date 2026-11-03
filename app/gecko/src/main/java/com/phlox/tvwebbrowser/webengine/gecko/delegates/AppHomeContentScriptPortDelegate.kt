@@ -5,7 +5,6 @@ import android.util.Base64
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.phlox.tvwebbrowser.AppContext
-import com.phlox.tvwebbrowser.model.AppDatabase
 import com.phlox.tvwebbrowser.singleton.FaviconsPool
 import com.phlox.tvwebbrowser.utils.Utils
 import com.phlox.tvwebbrowser.webengine.gecko.GeckoWebEngine
@@ -18,13 +17,12 @@ import java.io.ByteArrayOutputStream
 
 class AppHomeContentScriptPortDelegate(
     val port: WebExtension.Port,
-    val webEngine: GeckoWebEngine
+    val webEngine: GeckoWebEngine,
+    val bookmarksProvider: (() -> List<Any>)? = null // Provided by main app module
 ) : WebExtension.PortDelegate {
 
-    // Cache the serialized JSON payload in memory to make reopening the homepage instant
     private var cachedLinksJson: String? = null
 
-    // Clears the cache so the homepage loads fresh data when bookmarks change
     fun invalidateCache() {
         cachedLinksJson = null
     }
@@ -47,26 +45,27 @@ class AppHomeContentScriptPortDelegate(
                         webEngine.evaluateJavascript("hideVoiceSearchUI()")
                     }
 
-                    // Apply search engine config right away
                     webEngine.evaluateJavascript(
                         "applySearchEngine(\"${cfg.guessSearchEngineName()}\", \"${cfg.searchEngineURL.value}\")"
                     )
 
-                    // Use cached links if we have them, otherwise fetch in the background
                     if (cachedLinksJson != null) {
                         webEngine.evaluateJavascript("renderLinks('${cfg.homePageLinksMode.name}', $cachedLinksJson)")
                     } else {
                         (webEngine.callback?.getActivity() as? AppCompatActivity)?.lifecycleScope?.launch(Dispatchers.IO) {
                             try {
-                                val bookmarks = AppDatabase.getInstance(AppContext.get()).favoritesDao().getHomePageBookmarks()
+                                val bookmarks = bookmarksProvider?.invoke() ?: emptyList()
                                 val jsArr = JSONArray()
                                 for (item in bookmarks) {
-                                    jsArr.put(item.toJsonObj())
+                                    // Assumes item can be serialized or has a conversion method
+                                    if (item is com.phlox.tvwebbrowser.model.HomePageLink) {
+                                        jsArr.put(item.toJsonObj())
+                                    }
                                 }
 
                                 var links = jsArr.toString()
                                 links = links.replace("'", "\\'")
-                                cachedLinksJson = links // Save to memory cache
+                                cachedLinksJson = links
 
                                 webEngine.callback?.getActivity()?.runOnUiThread {
                                     webEngine.evaluateJavascript(
