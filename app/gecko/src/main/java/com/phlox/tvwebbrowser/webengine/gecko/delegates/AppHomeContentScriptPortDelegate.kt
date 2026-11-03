@@ -1,4 +1,3 @@
-
 package com.phlox.tvwebbrowser.webengine.gecko.delegates
 
 import android.graphics.Bitmap
@@ -6,11 +5,13 @@ import android.util.Base64
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.phlox.tvwebbrowser.AppContext
+import com.phlox.tvwebbrowser.model.AppDatabase
 import com.phlox.tvwebbrowser.singleton.FaviconsPool
 import com.phlox.tvwebbrowser.utils.Utils
 import com.phlox.tvwebbrowser.webengine.gecko.GeckoWebEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.mozilla.geckoview.WebExtension
@@ -33,11 +34,18 @@ class AppHomeContentScriptPortDelegate(
                 }
 
                 "onHomePageLoaded" -> {
-                    val callback = webEngine.callback ?: return
                     val cfg = AppContext.provideConfig()
                     val jsArr = JSONArray()
 
-                    for (item in callback.getHomePageLinks()) {
+                    val bookmarks = runBlocking(Dispatchers.IO) {
+                        try {
+                            AppDatabase.getInstance(AppContext.get()).favoritesDao().getHomePageBookmarks()
+                        } catch (e: Exception) {
+                            emptyList()
+                        }
+                    }
+
+                    for (item in bookmarks) {
                         jsArr.put(item.toJsonObj())
                     }
 
