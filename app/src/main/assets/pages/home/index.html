@@ -1,1 +1,137 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Home</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #ffffff; color: #202124;
+    font-family: Roboto, "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 8vh 24px 48px; }
+
+  form { display: flex; justify-content: center; margin-bottom: 56px; }
+  .box { display: flex; align-items: center; width: 100%; max-width: 640px;
+    border: 1px solid #dadce0; border-radius: 28px; padding: 0 20px; background: #fff; }
+  .box:focus-within { border-color: #4285f4; box-shadow: 0 1px 6px rgba(32,33,36,.28); }
+  input[type=search] { flex: 1; border: 0; outline: 0; background: transparent;
+    font-size: 20px; padding: 16px 0; color: #202124; min-width: 0; }
+  button { border: 0; background: transparent; cursor: pointer; padding: 8px; border-radius: 50%; }
+  button:focus { outline: 2px solid #4285f4; }
+  button svg { width: 24px; height: 24px; fill: #5f6368; display: block; }
+
+  #links { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 20px; justify-items: center; }
+  a.tile { display: flex; flex-direction: column; align-items: center; width: 120px;
+    padding: 12px 6px; border-radius: 12px; text-decoration: none; color: #202124; }
+  a.tile:hover, a.tile:focus { background: #f1f3f4; outline: 2px solid #4285f4; }
+  .icon { width: 56px; height: 56px; border-radius: 50%; background: #f1f3f4;
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+    font-size: 24px; font-weight: 500; color: #5f6368; }
+  .icon img { width: 32px; height: 32px; object-fit: contain; }
+  .label { margin-top: 8px; font-size: 14px; text-align: center; width: 100%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+  <form action="https://www.google.com/search" method="get" role="search">
+    <div class="box">
+      <input type="search" name="q" placeholder="Search Google" autocomplete="off" aria-label="Search Google">
+      <button type="submit" aria-label="Search">
+        <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      </button>
+    </div>
+  </form>
+  <nav id="links" aria-label="Bookmarks"></nav>
+</main>
+
+<script>
+  // ---- Hooks called by the app (WebView and GeckoView) ----
+  var faviconTiles = {}; // url -> icon element (GeckoView favicon requests)
+
+  function hostOf(url) {
+    try { return new URL(url).hostname; } catch (e) { return ""; }
+  }
+
+  function setLetter(icon, title) {
+    icon.textContent = (title || "?").trim().charAt(0).toUpperCase() || "?";
+  }
+
+  function setImage(icon, src, title) {
+    var img = new Image();
+    img.onload = function () { icon.textContent = ""; icon.appendChild(img); };
+    img.onerror = function () { setLetter(icon, title); };
+    img.src = src;
+  }
+
+  // Called by GeckoView with the favicon as a data: URL
+  function onFaviconLoaded(url, data) {
+    var icon = faviconTiles[url];
+    if (icon) setImage(icon, data, icon.getAttribute("data-title"));
+  }
+
+  // Called by the app after onHomePageLoaded(). Mode is ignored: show whatever the app sends.
+  function renderLinks(mode, links) {
+    var container = document.getElementById("links");
+    container.textContent = "";
+    faviconTiles = {};
+    var hasGeckoFavicons = window.TVBro && typeof TVBro.requestFavicon === "function";
+
+    (links || []).forEach(function (link) {
+      var host = hostOf(link.url);
+      var title = link.title || host || link.url;
+
+      var a = document.createElement("a");
+      a.className = "tile";
+      a.href = link.url;
+      a.title = title;
+
+      var icon = document.createElement("div");
+      icon.className = "icon";
+      icon.setAttribute("data-title", title);
+      setLetter(icon, title);
+      a.appendChild(icon);
+
+      var label = document.createElement("div");
+      label.className = "label";
+      label.textContent = title;
+      a.appendChild(label);
+
+      // Long-press / context menu edits the bookmark
+      if (link.order !== null && link.order !== undefined && window.TVBro && TVBro.onEditBookmark) {
+        a.addEventListener("contextmenu", function (e) {
+          e.preventDefault();
+          TVBro.onEditBookmark(link.order);
+        });
+      }
+
+      container.appendChild(a);
+
+      if (host) {
+        if (hasGeckoFavicons) {
+          faviconTiles[link.url] = icon;
+          TVBro.requestFavicon(link.url);
+        } else {
+          setImage(icon, "favicon://" + host, title);
+        }
+      }
+    });
+  }
+
+  // Search engine is fixed to Google on this page; nothing to apply.
+  function applySearchEngine(name, url) {}
+  function hideVoiceSearchUI() {}
+
+  // Tell the app we're ready so it sends the bookmarks
+  (function () {
+    function ready() { if (window.TVBro && TVBro.onHomePageLoaded) TVBro.onHomePageLoaded(); }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", ready);
+    else ready();
+  })();
+</script>
+</body>
+</html>
