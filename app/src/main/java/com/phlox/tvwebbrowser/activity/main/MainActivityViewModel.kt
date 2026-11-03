@@ -100,7 +100,7 @@ class MainActivityViewModel: ActiveModel() {
                 }
                 Config.HomePageLinksMode.BOOKMARKS -> {
                     val favorites = ArrayList<FavoriteItem>()
-                    favorites.addAll(AppDatabase.db.favoritesDao().getHomePageBookmarks())
+                    favorites.addAll(AppDatabase.db.favoritesDao().getAllForHomePage())
                     val outdatedUsefulAffiliateLinks = favorites.filter { it.validUntil != null && it.validUntil!!.before(Date()) && it.useful }
                     outdatedUsefulAffiliateLinks.forEach {
                         it.validUntil = null
@@ -183,7 +183,7 @@ class MainActivityViewModel: ActiveModel() {
                             homePageLinks.replaceAll(suggestions.map { HomePageLink.fromBookmarkItem(it) })
                         }
                     } else {
-                        homePageLinks.replaceAll(favorites.map { HomePageLink.fromBookmarkItem(it) })
+                        homePageLinks.replaceAll(favorites.mapIndexed { index, item -> HomePageLink.fromBookmarkItem(item, index) })
                     }
                 }
             }
@@ -322,24 +322,25 @@ class MainActivityViewModel: ActiveModel() {
     }
 
     fun removeHomePageLink(bookmark: HomePageLink) = modelScope.launch {
-        homePageLinks.remove(bookmark)
         bookmark.favoriteId?.let {
             AppDatabase.db.favoritesDao().delete(it)
         }
+        loadHomePageLinks()
+    }
+
+    /** Call after bookmarks were changed elsewhere (e.g. the bookmarks dialog) so the home page shows them. */
+    fun reloadHomePageLinks() = modelScope.launch {
+        loadHomePageLinks()
     }
 
     fun onHomePageLinkEdited(item: FavoriteItem) = modelScope.launch {
         if (item.id == 0L) {
             val lastInsertRowId = AppDatabase.db.favoritesDao().insert(item)
             item.id = lastInsertRowId
-            homePageLinks.add(HomePageLink.fromBookmarkItem(item))
         } else {
             AppDatabase.db.favoritesDao().update(item)
-            val index = homePageLinks.indexOfFirst { it.favoriteId == item.id }
-            if (index != -1) {
-                homePageLinks[index] = HomePageLink.fromBookmarkItem(item)
-            }
         }
+        loadHomePageLinks()
     }
 
     fun markBookmarkRecommendationAsUseful(bookmarkOrder: Int) {

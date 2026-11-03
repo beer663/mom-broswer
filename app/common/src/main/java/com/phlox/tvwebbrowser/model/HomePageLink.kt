@@ -33,6 +33,10 @@ class HomePageLink(
             return HomePageLink(item.title, item.url)
         }
 
+        fun fromBookmarkItem(item: FavoriteItem, position: Int): HomePageLink {
+            return HomePageLink(item.title?: "", item.url?: "", item.favicon, item.id, position, item.destUrl, item.description, item.validUntil)
+        }
+
         fun fromBookmarkItem(item: FavoriteItem): HomePageLink {
             return HomePageLink(item.title?: "", item.url?: "", item.favicon, item.id, item.order, item.destUrl, item.description, item.validUntil)
         }

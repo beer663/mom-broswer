@@ -55,6 +55,7 @@
     <string name="toggle_main_menu">Toggle main menu</string>
     <string name="navigate_back">Navigate back</string>
     <string name="navigate_home">Navigate home</string>
+    <string name="video_fullscreen">Video full screen</string>
     <string name="refresh_page">Refresh page</string>
     <string name="voice_search">Voice search</string>
     <string name="zoom_in">Zoom in</string>
