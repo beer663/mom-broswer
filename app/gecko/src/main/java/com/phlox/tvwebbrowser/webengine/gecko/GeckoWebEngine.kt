@@ -243,7 +243,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                     message: Any,
                     sender: WebExtension.MessageSender
                 ): GeckoResult<Any>? {
-                    return, null
+                    return null
                 }
 
                 override fun onConnect(port: WebExtension.Port) {
@@ -269,7 +269,9 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
                 override fun onConnect(port: WebExtension.Port) {
                     appHomeContentScriptPortDelegate =
-                        AppHomeContentScriptPortDelegate(port, this@GeckoWebEngine).also {
+                        AppHomeContentScriptPortDelegate(port, this@GeckoWebEngine) {
+                            "[]"
+                        }.also {
                             port.setDelegate(it)
                         }
                 }
