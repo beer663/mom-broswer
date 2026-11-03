@@ -1,3 +1,4 @@
+
 package com.phlox.tvwebbrowser.webengine.gecko.delegates
 
 import android.graphics.Bitmap
@@ -17,15 +18,8 @@ import java.io.ByteArrayOutputStream
 
 class AppHomeContentScriptPortDelegate(
     val port: WebExtension.Port,
-    val webEngine: GeckoWebEngine,
-    val bookmarksJsonProvider: (() -> String)? = null // Supplies pre-serialized JSON from the main app module
+    val webEngine: GeckoWebEngine
 ) : WebExtension.PortDelegate {
-
-    private var cachedLinksJson: String? = null
-
-    fun invalidateCache() {
-        cachedLinksJson = null
-    }
 
     override fun onPortMessage(message: Any, port: WebExtension.Port) {
         try {
@@ -39,38 +33,28 @@ class AppHomeContentScriptPortDelegate(
                 }
 
                 "onHomePageLoaded" -> {
+                    val callback = webEngine.callback ?: return
                     val cfg = AppContext.provideConfig()
+                    val jsArr = JSONArray()
+
+                    for (item in callback.getHomePageLinks()) {
+                        jsArr.put(item.toJsonObj())
+                    }
+
+                    var links = jsArr.toString()
+                    links = links.replace("'", "\\'")
 
                     if (Utils.isFireTV(AppContext.get())) {
                         webEngine.evaluateJavascript("hideVoiceSearchUI()")
                     }
 
                     webEngine.evaluateJavascript(
-                        "applySearchEngine(\"${cfg.guessSearchEngineName()}\", \"${cfg.searchEngineURL.value}\")"
+                        "renderLinks('${cfg.homePageLinksMode.name}', $links)"
                     )
 
-                    if (cachedLinksJson != null) {
-                        webEngine.evaluateJavascript("renderLinks('${cfg.homePageLinksMode.name}', $cachedLinksJson)")
-                    } else {
-                        (webEngine.callback?.getActivity() as? AppCompatActivity)?.lifecycleScope?.launch(Dispatchers.IO) {
-                            try {
-                                val linksJson = bookmarksJsonProvider?.invoke() ?: "[]"
-                                cachedLinksJson = linksJson
-
-                                webEngine.callback?.getActivity()?.runOnUiThread {
-                                    webEngine.evaluateJavascript(
-                                        "renderLinks('${cfg.homePageLinksMode.name}', $linksJson)"
-                                    )
-                                }
-                            } catch (_: Exception) {
-                                webEngine.callback?.getActivity()?.runOnUiThread {
-                                    webEngine.evaluateJavascript(
-                                        "renderLinks('${cfg.homePageLinksMode.name}', [])"
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    webEngine.evaluateJavascript(
+                        "applySearchEngine(\"${cfg.guessSearchEngineName()}\", \"${cfg.searchEngineURL.value}\")"
+                    )
                 }
 
                 "setSearchEngine" -> {
