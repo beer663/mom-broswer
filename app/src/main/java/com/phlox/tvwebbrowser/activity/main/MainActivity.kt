@@ -216,8 +216,6 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
             }
         }
 
-        vb.ibVideoFullscreen.setOnClickListener { toggleVideoFullscreen() }
-
         viewModel.homePageLinks.subscribe(this) {
             Log.i(TAG, "homePageLinks updated")
             val currentUrl = tabsModel.currentTab.value?.url ?: return@subscribe
@@ -582,34 +580,17 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
         return webView
     }
 
-    /**
-     * Asks the page (all frames, including embedded players) to toggle full screen for its main video.
-     * The extension's content script (content.js) receives this message and does the actual work.
-     */
-    private fun toggleVideoFullscreen() {
-        val tab = tabsModel.currentTab.value ?: return
-        tab.webEngine.evaluateJavascript(
-            "(function(){var m={tvbroToggleFullscreen:true};window.postMessage(m,'*');" +
-            "var f=document.querySelectorAll('iframe');" +
-            "for(var i=0;i<f.length;i++){try{f[i].contentWindow.postMessage(m,'*');}catch(e){}}})();"
-        )
-    }
-
     private fun onWebViewUpdated(tab: WebTabState) {
         vb.ibBack.isEnabled = tab.webEngine.canGoBack() == true
         vb.ibForward.isEnabled = tab.webEngine.canGoForward() == true
 
         val adblockEnabled = tab.adblock ?: config.adBlockEnabled
         vb.ibAdBlock.setImageResource(if (adblockEnabled) R.drawable.ic_adblock_on else R.drawable.ic_adblock_off)
-        // Blocked ads / popups counters are intentionally always hidden.
-        vb.tvBlockedAdCounter.visibility = View.GONE
-        vb.tvBlockedPopupCounter.visibility = View.GONE
+        vb.tvBlockedAdCounter.visibility = if (adblockEnabled && tab.blockedAds != 0) View.VISIBLE else View.GONE
+        vb.tvBlockedAdCounter.text = tab.blockedAds.toString()
 
-        // Side button for video full screen: only on normal web pages, GeckoView only
-        val pageUrl = tab.url
-        vb.ibVideoFullscreen.visibility =
-            if (config.isWebEngineGecko() && pageUrl.startsWith("http", true) && pageUrl != Config.HOME_PAGE_URL)
-                View.VISIBLE else View.GONE
+        vb.tvBlockedPopupCounter.visibility = if (tab.blockedPopups != 0) View.VISIBLE else View.GONE
+        vb.tvBlockedPopupCounter.text = tab.blockedPopups.toString()
     }
 
     private fun onDownloadRequested(url: String, referer: String, originalDownloadFileName: String, userAgent: String?, mimeType: String? = null,
@@ -1308,10 +1289,16 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
             Log.i(TAG, "onBlockedAd: $uri")
             if (!config.adBlockEnabled) return
             tab.blockedAds++
+            vb.tvBlockedAdCounter.visibility = if (tab.blockedAds > 0) View.VISIBLE else View.GONE
+            vb.tvBlockedAdCounter.text = tab.blockedAds.toString()
         }
 
         override fun onBlockedDialog(newTab: Boolean) {
     tab.blockedPopups++
+    runOnUiThread {
+        vb.tvBlockedPopupCounter.visibility = if (tab.blockedPopups > 0) View.VISIBLE else View.GONE
+        vb.tvBlockedPopupCounter.text = tab.blockedPopups.toString()
+            }
         }
 
         override fun onCreateWindow(dialog: Boolean, userGesture: Boolean): View? {
