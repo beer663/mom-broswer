@@ -11,7 +11,6 @@ import com.phlox.tvwebbrowser.utils.Utils
 import com.phlox.tvwebbrowser.webengine.gecko.GeckoWebEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
 import org.mozilla.geckoview.WebExtension
@@ -21,6 +20,9 @@ class AppHomeContentScriptPortDelegate(
     val port: WebExtension.Port,
     val webEngine: GeckoWebEngine
 ) : WebExtension.PortDelegate {
+
+    // Cache the serialized JSON payload in memory to make reopening the homepage instant
+    private var cachedLinksJson: String? = null
 
     override fun onPortMessage(message: Any, port: WebExtension.Port) {
         try {
@@ -35,34 +37,46 @@ class AppHomeContentScriptPortDelegate(
 
                 "onHomePageLoaded" -> {
                     val cfg = AppContext.provideConfig()
-                    val jsArr = JSONArray()
-
-                    val bookmarks = runBlocking(Dispatchers.IO) {
-                        try {
-                            AppDatabase.getInstance(AppContext.get()).favoritesDao().getHomePageBookmarks()
-                        } catch (e: Exception) {
-                            emptyList()
-                        }
-                    }
-
-                    for (item in bookmarks) {
-                        jsArr.put(item.toJsonObj())
-                    }
-
-                    var links = jsArr.toString()
-                    links = links.replace("'", "\\'")
 
                     if (Utils.isFireTV(AppContext.get())) {
                         webEngine.evaluateJavascript("hideVoiceSearchUI()")
                     }
 
-                    webEngine.evaluateJavascript(
-                        "renderLinks('${cfg.homePageLinksMode.name}', $links)"
-                    )
-
+                    // Apply search engine config right away
                     webEngine.evaluateJavascript(
                         "applySearchEngine(\"${cfg.guessSearchEngineName()}\", \"${cfg.searchEngineURL.value}\")"
                     )
+
+                    // Use cached links if we have them, otherwise fetch in the background
+                    if (cachedLinksJson != null) {
+                        webEngine.evaluateJavascript("renderLinks('${cfg.homePageLinksMode.name}', $cachedLinksJson)")
+                    } else {
+                        (webEngine.callback?.getActivity() as? AppCompatActivity)?.lifecycleScope?.launch(Dispatchers.IO) {
+                            try {
+                                val bookmarks = AppDatabase.getInstance(AppContext.get()).favoritesDao().getHomePageBookmarks()
+                                val jsArr = JSONArray()
+                                for (item in bookmarks) {
+                                    jsArr.put(item.toJsonObj())
+                                }
+
+                                var links = jsArr.toString()
+                                links = links.replace("'", "\\'")
+                                cachedLinksJson = links // Save to memory cache
+
+                                webEngine.callback?.getActivity()?.runOnUiThread {
+                                    webEngine.evaluateJavascript(
+                                        "renderLinks('${cfg.homePageLinksMode.name}', $links)"
+                                    )
+                                }
+                            } catch (_: Exception) {
+                                webEngine.callback?.getActivity()?.runOnUiThread {
+                                    webEngine.evaluateJavascript(
+                                        "renderLinks('${cfg.homePageLinksMode.name}', [])"
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
                 "setSearchEngine" -> {
