@@ -18,7 +18,7 @@ import java.io.ByteArrayOutputStream
 class AppHomeContentScriptPortDelegate(
     val port: WebExtension.Port,
     val webEngine: GeckoWebEngine,
-    val bookmarksProvider: (() -> List<Any>)? = null // Provided by main app module
+    val bookmarksJsonProvider: (() -> String)? = null // Supplies pre-serialized JSON from the main app module
 ) : WebExtension.PortDelegate {
 
     private var cachedLinksJson: String? = null
@@ -54,22 +54,12 @@ class AppHomeContentScriptPortDelegate(
                     } else {
                         (webEngine.callback?.getActivity() as? AppCompatActivity)?.lifecycleScope?.launch(Dispatchers.IO) {
                             try {
-                                val bookmarks = bookmarksProvider?.invoke() ?: emptyList()
-                                val jsArr = JSONArray()
-                                for (item in bookmarks) {
-                                    // Assumes item can be serialized or has a conversion method
-                                    if (item is com.phlox.tvwebbrowser.model.HomePageLink) {
-                                        jsArr.put(item.toJsonObj())
-                                    }
-                                }
-
-                                var links = jsArr.toString()
-                                links = links.replace("'", "\\'")
-                                cachedLinksJson = links
+                                val linksJson = bookmarksJsonProvider?.invoke() ?: "[]"
+                                cachedLinksJson = linksJson
 
                                 webEngine.callback?.getActivity()?.runOnUiThread {
                                     webEngine.evaluateJavascript(
-                                        "renderLinks('${cfg.homePageLinksMode.name}', $links)"
+                                        "renderLinks('${cfg.homePageLinksMode.name}', $linksJson)"
                                     )
                                 }
                             } catch (_: Exception) {
