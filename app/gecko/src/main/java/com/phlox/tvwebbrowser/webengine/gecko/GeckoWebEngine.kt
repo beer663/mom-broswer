@@ -365,4 +365,60 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     override fun canZoomIn(): Boolean {
         return session.settings.displayMode != GeckoSessionSettings.DISPLAY_MODE_FULLSCREEN
     }
+
+    override fun togglePlayback() {
+        // No-op
+    }
+
+    override suspend fun renderThumbnail(bitmap: Bitmap?): Bitmap? {
+        return null
+    }
+
+    override fun onAttachToWindow(callback: WebEngineWindowProviderCallback, parent: ViewGroup) {
+        this.callback = callback
+    }
+
+    override fun onDetachFromWindow(completely: Boolean, destroyTab: Boolean) {
+        this.callback = null
+    }
+
+    override fun trimMemory() {
+        // No-op
+    }
+
+    override fun onPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean {
+        return false
+    }
+
+    override fun isSameSession(internalRepresentation: Any): Boolean {
+        return internalRepresentation == session
+    }
+
+    override fun stopPlayback() {
+        // No-op
+    }
+
+    override fun rewind() {
+        // No-op
+    }
+
+    override fun fastForward() {
+        // No-op
+    }
+
+    override fun setVirtualCursorMode(enabled: Boolean) {
+        // No-op
+    }
+
+    override fun isVirtualCursorMode(): Boolean {
+        return false
+    }
+
+    override fun getCursorDrawerDelegate(): CursorDrawerDelegate? {
+        return null
+    }
+
+    override fun onLongPress(x: Int, y: Int) {
+        // No-op
+    }
 }
