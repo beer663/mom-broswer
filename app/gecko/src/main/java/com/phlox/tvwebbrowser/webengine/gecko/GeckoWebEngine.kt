@@ -116,7 +116,9 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 }) { }
             }
 
-            val webView = GeckoViewWithVirtualCursor(context)
+            val webView = GeckoViewWithVirtualCursor(context).apply {
+                setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            }
             webViewContainer.addView(webView)
             weakRefToSingleGeckoView = WeakReference(webView)
             webViewContainer.setWillNotDraw(true)
@@ -359,4 +361,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         session.goForward()
     }
 
-    override fun canZoomIn():
+    override fun canZoomIn(): Boolean {
+        return session.settings.displayMode != GeckoSessionSettings.DISPLAY_MODE_FULLSCREEN
+    }
+}
