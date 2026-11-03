@@ -68,7 +68,6 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 val builder = GeckoRuntimeSettings.Builder()
 
                 builder.aboutConfigEnabled(true)
-                    .consoleOutputEnabled(false)
                     .preferredColorScheme(
                         AppContext.provideConfig().theme.value.toGeckoPreferredColorScheme()
                     )
@@ -244,7 +243,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                     message: Any,
                     sender: WebExtension.MessageSender
                 ): GeckoResult<Any>? {
-                    return null
+                    return, null
                 }
 
                 override fun onConnect(port: WebExtension.Port) {
