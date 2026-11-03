@@ -111,7 +111,10 @@ class MainActivityViewModel: ActiveModel() {
                         AppDatabase.db.favoritesDao().update(it)
                     }
                     val hasOutdatedAffiliateLinks = favorites.any { it.validUntil != null && it.validUntil!!.before(Date())}
-                    if ((favorites.isEmpty() && !config.initialBookmarksSuggestionsLoaded) || hasOutdatedAffiliateLinks) {
+                    // Remote "recommended" bookmarks (YouTube, Netflix, affiliate links...) are disabled on purpose:
+                    // the home page shows only the bookmarks the user has added.
+                    val loadRemoteSuggestions = false
+                    if (loadRemoteSuggestions && ((favorites.isEmpty() && !config.initialBookmarksSuggestionsLoaded) || hasOutdatedAffiliateLinks)) {
                         val suggestions = withContext(Dispatchers.IO) {
                             val countryCode = /*if (BuildConfig.DEBUG) "debug" else*/ try {
                                 val response = URL("http://ip-api.com/json/").readText()
