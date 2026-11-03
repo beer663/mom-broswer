@@ -24,6 +24,11 @@ class AppHomeContentScriptPortDelegate(
     // Cache the serialized JSON payload in memory to make reopening the homepage instant
     private var cachedLinksJson: String? = null
 
+    // Clears the cache so the homepage loads fresh data when bookmarks change
+    fun invalidateCache() {
+        cachedLinksJson = null
+    }
+
     override fun onPortMessage(message: Any, port: WebExtension.Port) {
         try {
             val msgJson = message as JSONObject
