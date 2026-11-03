@@ -1,4 +1,3 @@
-
 package com.phlox.tvwebbrowser.webengine.gecko
 
 import android.content.Context
@@ -69,6 +68,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 val builder = GeckoRuntimeSettings.Builder()
 
                 builder.aboutConfigEnabled(true)
+                    .consoleOutputEnabled(false)
                     .preferredColorScheme(
                         AppContext.provideConfig().theme.value.toGeckoPreferredColorScheme()
                     )
@@ -81,13 +81,13 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 builder.contentBlocking(
                     ContentBlocking.Settings.Builder()
                         .antiTracking(
-                            ContentBlocking.AntiTracking.DEFAULT or
-                                ContentBlocking.AntiTracking.STP
+                             ContentBlocking.AntiTracking.DEFAULT or
+                                 ContentBlocking.AntiTracking.STP
                         )
                         .safeBrowsing(ContentBlocking.SafeBrowsing.DEFAULT)
                         .cookieBehavior(ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS)
                         .cookieBehaviorPrivateMode(
-                            ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS
+                             ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS
                         )
                         .enhancedTrackingProtectionLevel(ContentBlocking.EtpLevel.STRICT)
                         .build()
@@ -359,226 +359,4 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         session.goForward()
     }
 
-    override fun canZoomIn(): Boolean {
-        return true
-    }
-
-    override fun zoomIn() {
-        webView?.cursorDrawerDelegate?.tryZoomIn()
-    }
-
-    override fun canZoomOut(): Boolean {
-        return true
-    }
-
-    override fun zoomOut() {
-        webView?.cursorDrawerDelegate?.tryZoomOut()
-    }
-
-    override fun zoomBy(zoomBy: Float) {
-    }
-
-    override fun evaluateJavascript(script: String) {
-        session.loadUri("javascript:$script")
-    }
-
-    override fun setNetworkAvailable(connected: Boolean) {
-        // No operation.
-    }
-
-    override fun getView(): View? {
-        return webView
-    }
-
-    override fun getOrCreateView(activityContext: Context): View {
-        if (webView == null) {
-            val geckoView = weakRefToSingleGeckoView.get()
-            webView = if (geckoView == null) {
-                val wv = GeckoViewWithVirtualCursor(activityContext)
-                weakRefToSingleGeckoView = WeakReference(wv)
-                wv
-            } else {
-                geckoView
-            }.also { wv ->
-                wv.cursorDrawerDelegate.callback = this
-            }
-        }
-        return webView!!
-    }
-
-    override fun canGoBack(): Boolean {
-        return navigationDelegate.canGoBack
-    }
-
-    override fun goBack() {
-        session.goBack()
-    }
-
-    override fun reload() {
-        val adblockEnabled = tab.adblock ?: AppContext.provideConfig().adBlockEnabled
-        if (session.settings.useTrackingProtection != adblockEnabled) {
-            session.settings.useTrackingProtection = adblockEnabled
-        }
-        session.reload()
-    }
-
-    override fun onFilePicked(resultCode: Int, data: Intent?) {
-        promptDelegate.onFileCallbackResult(resultCode, data)
-    }
-
-    override fun onResume() {
-        if (!session.isOpen) {
-            session.open(runtime)
-            progressDelegate.sessionState?.let {
-                session.restoreState(it)
-            }
-        }
-        session.setFocused(true)
-    }
-
-    override fun onPause() {
-        session.setFocused(false)
-        mediaSessionDelegate.mediaSession?.let {
-            if (!mediaSessionDelegate.paused) {
-                it.pause()
-            }
-        }
-    }
-
-    override fun onUpdateAdblockSetting(newState: Boolean) {
-    }
-
-    override fun hideFullscreenView() {
-        session.exitFullScreen()
-    }
-
-    override fun togglePlayback() {
-        mediaSessionDelegate.mediaSession?.let {
-            if (mediaSessionDelegate.paused) {
-                it.play()
-            } else {
-                it.pause()
-            }
-        }
-    }
-
-    override fun stopPlayback() {
-        mediaSessionDelegate.mediaSession?.stop()
-    }
-
-    override fun rewind() {
-        mediaSessionDelegate.mediaSession?.seekBackward()
-    }
-
-    override fun fastForward() {
-        mediaSessionDelegate.mediaSession?.seekForward()
-    }
-
-    override suspend fun renderThumbnail(bitmap: Bitmap?): Bitmap? {
-        return webView?.renderThumbnail(bitmap)
-    }
-
-    override fun onAttachToWindow(
-        callback: WebEngineWindowProviderCallback,
-        parent: ViewGroup
-    ) {
-        this.callback = callback
-        val webView = this.webView ?: throw IllegalStateException("WebView is null")
-        val previousSession = webView.session
-
-        if (previousSession != null && previousSession != session) {
-            previousSession.setActive(false)
-            webView.releaseSession()
-        }
-
-        webView.coverUntilFirstPaint(Color.WHITE)
-        webView.setSession(session)
-
-        if (session.isOpen && previousSession != null && previousSession != session) {
-            session.setActive(true)
-            session.reload()
-        }
-    }
-
-    override fun onDetachFromWindow(completely: Boolean, destroyTab: Boolean) {
-        callback = null
-        val webView = this.webView
-
-        if (webView != null) {
-            val session = webView.session
-            if (session == this.session) {
-                session.setActive(false)
-                webView.releaseSession()
-            }
-        }
-
-        if (completely) {
-            this.webView = null
-        }
-
-        if (destroyTab) {
-            mediaSessionDelegate.mediaSession?.stop()
-            session.close()
-        }
-    }
-
-    override fun trimMemory() {
-        val currentView = webView
-
-        if (currentView != null && !currentView.isAttachedToWindow) {
-            webView = null
-        }
-    }
-
-    override fun onPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ): Boolean {
-        return permissionDelegate.onRequestPermissionsResult(
-            requestCode,
-            permissions,
-            grantResults
-        )
-    }
-
-    override fun isSameSession(internalRepresentation: Any): Boolean {
-        return internalRepresentation is GeckoSession && internalRepresentation == session
-    }
-
-    override fun onLongPress(x: Int, y: Int) {
-        // There is a small delay so that if MyContentDelegate.onContextMenu
-        // (with more contextual data) is triggered first, this call will be ignored.
-        uiHandler.postDelayed(
-            {
-                callback?.onContextMenu(
-                    webView!!.cursorDrawerDelegate,
-                    navigationDelegate.locationURL,
-                    null,
-                    null,
-                    null,
-                    null,
-                    null,
-                    x,
-                    y
-                )
-            },
-            100
-        )
-    }
-
-    override fun isVirtualCursorMode(): Boolean {
-        return webView?.virtualCursorMode ?: true
-    }
-
-    override fun setVirtualCursorMode(enabled: Boolean) {
-        if (enabled) {
-            webView?.cursorDrawerDelegate?.animateAppearing()
-        }
-        webView?.virtualCursorMode = enabled
-    }
-
-    override fun getCursorDrawerDelegate(): CursorDrawerDelegate? {
-        return webView?.cursorDrawerDelegate
-    }
-}
+    override fun canZoomIn():
