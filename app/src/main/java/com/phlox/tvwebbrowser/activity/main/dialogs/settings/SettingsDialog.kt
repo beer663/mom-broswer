@@ -6,7 +6,7 @@ import android.content.DialogInterface
 import android.os.Bundle
 import android.view.View
 import android.view.WindowManager
-import com.fedir.segmentedbutton.Segmentedbutton
+import com.fedir.segmentedbutton.SegmentedButton
 import com.phlox.tvwebbrowser.R
 import com.phlox.tvwebbrowser.activity.main.SettingsModel
 import com.phlox.tvwebbrowser.widgets.SegmentedButtonTabsAdapter
