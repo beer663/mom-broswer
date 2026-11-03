@@ -1,3 +1,4 @@
+
 console.log("TV Bro background extension loaded");
 
 let requests = new Map();
@@ -51,4 +52,41 @@ browser.webRequest.onBeforeRequest.addListener(
     },
     { urls: ["<all_urls>"] },
     ["blocking"]
+);
+
+// Replace the remote TV Bro home page with the bundled one (homepage.html).
+// NOTE: homepage.html must be kept identical to app/src/main/assets/pages/home/index.html
+browser.webRequest.onBeforeRequest.addListener(
+    function (details) {
+        if (details.type !== "main_frame") return {};
+        const filter = browser.webRequest.filterResponseData(details.requestId);
+        const encoder = new TextEncoder();
+        const pageReady = fetch(browser.runtime.getURL("homepage.html")).then(r => r.text());
+        filter.ondata = () => { /* drop the remote content */ };
+        filter.onstop = async () => {
+            try {
+                filter.write(encoder.encode(await pageReady));
+            } finally {
+                filter.close();
+            }
+        };
+        return {};
+    },
+    { urls: ["https://tvbro.phlox.dev/appcontent/home/*"] },
+    ["blocking"]
+);
+
+
+// The remote page may send a Content-Security-Policy that would block the bundled page's inline script.
+browser.webRequest.onHeadersReceived.addListener(
+    function (details) {
+        if (details.type !== "main_frame") return {};
+        return {
+            responseHeaders: details.responseHeaders.filter(
+                h => h.name.toLowerCase() !== "content-security-policy" &&
+                     h.name.toLowerCase() !== "content-security-policy-report-only")
+        };
+    },
+    { urls: ["https://tvbro.phlox.dev/appcontent/home/*"] },
+    ["blocking", "responseHeaders"]
 );
