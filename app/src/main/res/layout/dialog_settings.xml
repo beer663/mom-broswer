@@ -29,13 +29,6 @@
             android:background="@drawable/settings_tab_bg_selector"
             android:layout_marginStart="1dp"
             android:layout_marginEnd="1dp"/>
-        <Button
-            android:id="@+id/btnVersionTab"
-            android:layout_width="0dp"
-            android:layout_height="50dp"
-            android:layout_weight="1"
-            android:text="@string/version_and_updates"
-            android:background="@drawable/settings_tab_bg_selector"/>
     </com.fedir.segmentedbutton.SegmentedButton>
 
     <FrameLayout
