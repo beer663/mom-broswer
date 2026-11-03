@@ -6,14 +6,14 @@ import android.content.DialogInterface
 import android.os.Bundle
 import android.view.View
 import android.view.WindowManager
-import com.fedir.segmentedbutton.SegmentedButton
+import com.fedir.segmentedbutton.Segmentedbutton
 import com.phlox.tvwebbrowser.R
 import com.phlox.tvwebbrowser.activity.main.SettingsModel
 import com.phlox.tvwebbrowser.widgets.SegmentedButtonTabsAdapter
 
 class SettingsDialog(context: Context, val model: SettingsModel) :
     Dialog(context, R.style.SettingsDialog),
-    DialogInterface.OnDismissListener, VersionSettingsView.Callback {
+    DialogInterface.OnDismissListener {
     private var mainView: MainSettingsView? = null
     private var sbTabs: SegmentedButton
 
@@ -30,11 +30,8 @@ class SettingsDialog(context: Context, val model: SettingsModel) :
                         mainView = MainSettingsView(context)
                         mainView!!
                     }
-                    R.id.btnShortcutsTab -> ShortcutsSettingsView(context)
                     else -> {
-                        val view = VersionSettingsView(context)
-                        view.callback = this@SettingsDialog
-                        view
+                        ShortcutsSettingsView(context)
                     }
                 }
             }
@@ -52,9 +49,5 @@ class SettingsDialog(context: Context, val model: SettingsModel) :
 
     override fun onDismiss(dialog: DialogInterface?) {
         mainView?.save()
-    }
-
-    override fun onNeedToCloseSettings() {
-        dismiss()
     }
 }
