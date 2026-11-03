@@ -53,7 +53,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
     companion object {
         const val ENGINE_NAME = "GeckoView"
-        private const val APP_WEB_EXTENSION_VERSION = 48
+        private const val APP_WEB_EXTENSION_VERSION = 49
         private const val ADGUARD_DNS_URL = "https://dns.adguard-dns.com/dns-query"
 
         val TAG: String = GeckoWebEngine::class.java.simpleName
@@ -190,7 +190,6 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     var appContentScriptPortDelegate: AppContentScriptPortDelegate? = null
     var appWebExtensionBackgroundPortDelegate: AppWebExtensionBackgroundPortDelegate? = null
     private lateinit var webExtObserver: (WebExtension?) -> Unit
-    private var pendingHomePageLoad = false
 
     override val url: String?
         get() = navigationDelegate.locationURL
@@ -227,10 +226,6 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
             if (ext != null) {
                 uiHandler.post {
                     connectToAppWebExtension(ext)
-
-                    if (pendingHomePageLoad) {
-                        loadLocalHomePage()
-                    }
                 }
                 appWebExtension.unsubscribe(webExtObserver)
             }
@@ -331,19 +326,6 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         return SessionState.fromString(jsString)
     }
 
-    private fun loadLocalHomePage() {
-        val extension = appWebExtension.value
-        val baseUrl = extension?.metaData?.baseUrl
-
-        if (baseUrl.isNullOrBlank()) {
-            pendingHomePageLoad = true
-            return
-        }
-
-        pendingHomePageLoad = false
-        session.loadUri("${baseUrl.trimEnd('/')}/homepage.html")
-    }
-
     override fun loadUrl(url: String) {
         if (!session.isOpen) {
             session.open(runtime)
@@ -361,7 +343,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 }
 
                 Config.HomePageMode.HOME_PAGE -> {
-                    loadLocalHomePage()
+                    session.loadUri(Config.HOME_PAGE_URL)
                 }
             }
         } else {
