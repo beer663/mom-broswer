@@ -68,7 +68,7 @@
     <string name="clear">Clear</string>
     <string name="install">Install</string>
     <string name="turn_on_unknown_sources">Please turn on \"Unknown sources\" system setting</string>
-    <string name="turn_on_unknown_sources_for_app">Please allow TV Bro to install apps from \"Unknown sources\" in system settings</string>
+    <string name="turn_on_unknown_sources_for_app">Please allow Mom Browser to install apps from \"Unknown sources\" in system settings</string>
     <string name="storage_not_mounted">Storage not mounted</string>
     <string name="can_not_create_downloads">Can not create downloads dir</string>
     <string name="voice_search_not_found">Voice search not found</string>
@@ -77,7 +77,7 @@
     <string name="downloads">Downloads</string>
     <string name="downloads_notifications_description">Notifications regarding downloads statuses</string>
     <string name="main">Main</string>
-    <string name="version_and_updates"><![CDATA[Version & updates]]></string>
+    <string name="version_and_updates"><![CDATA[Version]]></string>
     <string name="version_s">Version: %s</string>
     <string name="build_flavor_s">Build flavor: %1$s · %2$s</string>
     <string name="support_the_author">☕ Support the author</string>
@@ -139,7 +139,7 @@
         <item>Dark</item>
     </array>
     <string name="incognito_mode">Incognito mode</string>
-    <string name="incognito_mode_hint">Now you can browse privately, and other people who use this device won’t see your activity. TV Bro won’t save your browsing history, cookies and site data, information entered in forms.\n\nHowever, downloads and bookmarks will be saved. Your activity might still be visible to websites you visit, your organization or internet service provider.</string>
+    <string name="incognito_mode_hint">Now you can browse privately, and other people who use this device won’t see your activity. Mom Browser won’t save your browsing history, cookies and site data, information entered in forms.\n\nHowever, downloads and bookmarks will be saved. Your activity might still be visible to websites you visit, your organization or internet service provider.</string>
     <string name="don_t_show_again">Don\'t show again</string>
     <string name="why_icon_changed">Why icon changed?</string>
     <string name="clear_web_cache">Clear web cache</string>
@@ -162,7 +162,7 @@
     <string name="custom_home_page_url">Custom home page URL</string>
     <string name="home_page_links">Links on home page</string>
     <array name="home_page_modes">
-        <item>TV Bro Home</item>
+        <item>Mom Browser Home</item>
         <item>Search engine</item>
         <item>Custom</item>
         <item>Blank</item>
