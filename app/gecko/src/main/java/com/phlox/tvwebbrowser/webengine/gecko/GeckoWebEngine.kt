@@ -4,6 +4,7 @@ package com.phlox.tvwebbrowser.webengine.gecko
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
@@ -53,7 +54,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
     companion object {
         const val ENGINE_NAME = "GeckoView"
-        private const val APP_WEB_EXTENSION_VERSION = 51
+        private const val APP_WEB_EXTENSION_VERSION = 54
         private const val ADGUARD_DNS_URL = "https://dns.adguard-dns.com/dns-query"
 
         val TAG: String = GeckoWebEngine::class.java.simpleName
@@ -188,6 +189,22 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     val selectionActionDelegate = MySelectionActionDelegate()
     var appHomeContentScriptPortDelegate: AppHomeContentScriptPortDelegate? = null
     var appContentScriptPortDelegate: AppContentScriptPortDelegate? = null
+    private val contentPortDelegates = mutableSetOf<AppContentScriptPortDelegate>()
+    private var lastReportedVideoPresence = false
+
+    fun onContentVideoStateChanged() {
+        val present = contentPortDelegates.any { it.hasVideo }
+        if (present != lastReportedVideoPresence) {
+            lastReportedVideoPresence = present
+            callback?.onVideoPresenceChanged(present)
+        }
+    }
+
+    fun onContentPortDisconnected(delegate: AppContentScriptPortDelegate) {
+        contentPortDelegates.remove(delegate)
+        if (appContentScriptPortDelegate === delegate) appContentScriptPortDelegate = null
+        onContentVideoStateChanged()
+    }
     var appWebExtensionBackgroundPortDelegate: AppWebExtensionBackgroundPortDelegate? = null
     private lateinit var webExtObserver: (WebExtension?) -> Unit
 
@@ -248,6 +265,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 override fun onConnect(port: WebExtension.Port) {
                     appContentScriptPortDelegate =
                         AppContentScriptPortDelegate(port, this@GeckoWebEngine).also {
+                            contentPortDelegates.add(it)
                             port.setDelegate(it)
                         }
                 }
@@ -491,7 +509,10 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
             webView.releaseSession()
         }
 
-        webView.coverUntilFirstPaint(Color.WHITE)
+        // Cover shown until the page paints: dark in dark mode, soft off-white otherwise (was bright white)
+        val isNightMode = (callback.getActivity().resources.configuration.uiMode and
+                Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        webView.coverUntilFirstPaint(if (isNightMode) 0xFF1B1B1B.toInt() else 0xFFE4E2DD.toInt())
         webView.setSession(session)
 
         if (session.isOpen && previousSession != null && previousSession != session) {
