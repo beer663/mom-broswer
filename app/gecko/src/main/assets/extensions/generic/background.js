@@ -50,7 +50,12 @@ browser.webRequest.onBeforeRequest.addListener(
         tvBroPort.postMessage({ action: "onBeforeRequest", details: details });
         return promise;
     },
-    { urls: ["<all_urls>"] },
+    {
+        urls: ["<all_urls>"],
+        // Skip the app round-trip for resource types that are almost never ads (faster page loads).
+        types: ["sub_frame", "script", "image", "imageset", "object", "xmlhttprequest",
+                "ping", "beacon", "media", "websocket", "other"]
+    },
     ["blocking"]
 );
 

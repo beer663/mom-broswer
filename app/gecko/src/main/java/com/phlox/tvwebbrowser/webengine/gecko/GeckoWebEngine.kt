@@ -53,7 +53,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
     companion object {
         const val ENGINE_NAME = "GeckoView"
-        private const val APP_WEB_EXTENSION_VERSION = 50
+        private const val APP_WEB_EXTENSION_VERSION = 51
         private const val ADGUARD_DNS_URL = "https://dns.adguard-dns.com/dns-query"
 
         val TAG: String = GeckoWebEngine::class.java.simpleName
