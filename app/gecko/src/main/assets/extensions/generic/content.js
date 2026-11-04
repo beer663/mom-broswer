@@ -50,7 +50,7 @@ function tvbroCreateVideoControls() {
     tvbroVideoControlsHost = document.createElement("div");
     tvbroVideoControlsHost.id = "tvbro-video-controls";
     tvbroVideoControlsHost.style.cssText =
-        "position:fixed;top:35vh;left:12px;right:12px;z-index:2147483647;" +
+        "position:fixed;top:38vh;left:12px;right:12px;z-index:2147483647;" +
         "display:none;pointer-events:none;";
 
     const shadow = tvbroVideoControlsHost.attachShadow({ mode: "closed" });
