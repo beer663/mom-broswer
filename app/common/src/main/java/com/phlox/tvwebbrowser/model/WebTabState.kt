@@ -64,6 +64,8 @@ data class WebTabState(@PrimaryKey(autoGenerate = true)
     @Ignore
     var blockedPopups = 0
     @Ignore
+    var hasVideo = false //reported by the GeckoView content script: a sizeable <video> is on the page
+    @Ignore
     var cachedHostConfig: HostConfig? = null
 
     constructor(context: Context, json: JSONObject) : this() {

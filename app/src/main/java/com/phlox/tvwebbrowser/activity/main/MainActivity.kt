@@ -605,10 +605,15 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
         vb.tvBlockedAdCounter.visibility = View.GONE
         vb.tvBlockedPopupCounter.visibility = View.GONE
 
-        // Side button for video full screen: only on normal web pages, GeckoView only
+        updateVideoFullscreenButton(tab)
+    }
+
+    /** Side full screen button: only on normal web pages, GeckoView only, and only while a video is on the page. */
+    private fun updateVideoFullscreenButton(tab: WebTabState) {
         val pageUrl = tab.url
         vb.ibVideoFullscreen.visibility =
-            if (config.isWebEngineGecko() && pageUrl.startsWith("http", true) && pageUrl != Config.HOME_PAGE_URL)
+            if (config.isWebEngineGecko() && tab.hasVideo &&
+                pageUrl.startsWith("http", true) && pageUrl != Config.HOME_PAGE_URL)
                 View.VISIBLE else View.GONE
     }
 
@@ -1229,7 +1234,15 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
             }
         }
 
+        override fun onVideoPresenceChanged(present: Boolean) {
+            tab.hasVideo = present
+            runOnUiThread {
+                if (tab == tabsModel.currentTab.value) updateVideoFullscreenButton(tab)
+            }
+        }
+
         override fun onPageStarted(url: String?) {
+            tab.hasVideo = false
             onWebViewUpdated(tab)
             val webViewUrl = tab.webEngine.url
             if (webViewUrl != null) {

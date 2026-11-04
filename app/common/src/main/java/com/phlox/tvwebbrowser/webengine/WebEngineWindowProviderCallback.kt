@@ -42,6 +42,8 @@ interface WebEngineWindowProviderCallback {
     fun initiateVoiceSearch()
     fun onEditHomePageBookmarkSelected(index: Int)
     fun getHomePageLinks(): List<HomePageLink>
+    /** Called when a video appears on / disappears from the page (GeckoView only). */
+    fun onVideoPresenceChanged(present: Boolean) {}
     fun onPrepareForFullscreen()
     fun onExitFullscreen()
     fun onVisited(url: String)

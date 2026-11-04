@@ -53,7 +53,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
     companion object {
         const val ENGINE_NAME = "GeckoView"
-        private const val APP_WEB_EXTENSION_VERSION = 51
+        private const val APP_WEB_EXTENSION_VERSION = 52
         private const val ADGUARD_DNS_URL = "https://dns.adguard-dns.com/dns-query"
 
         val TAG: String = GeckoWebEngine::class.java.simpleName
@@ -188,6 +188,22 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     val selectionActionDelegate = MySelectionActionDelegate()
     var appHomeContentScriptPortDelegate: AppHomeContentScriptPortDelegate? = null
     var appContentScriptPortDelegate: AppContentScriptPortDelegate? = null
+    private val contentPortDelegates = mutableSetOf<AppContentScriptPortDelegate>()
+    private var lastReportedVideoPresence = false
+
+    fun onContentVideoStateChanged() {
+        val present = contentPortDelegates.any { it.hasVideo }
+        if (present != lastReportedVideoPresence) {
+            lastReportedVideoPresence = present
+            callback?.onVideoPresenceChanged(present)
+        }
+    }
+
+    fun onContentPortDisconnected(delegate: AppContentScriptPortDelegate) {
+        contentPortDelegates.remove(delegate)
+        if (appContentScriptPortDelegate === delegate) appContentScriptPortDelegate = null
+        onContentVideoStateChanged()
+    }
     var appWebExtensionBackgroundPortDelegate: AppWebExtensionBackgroundPortDelegate? = null
     private lateinit var webExtObserver: (WebExtension?) -> Unit
 
@@ -248,6 +264,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 override fun onConnect(port: WebExtension.Port) {
                     appContentScriptPortDelegate =
                         AppContentScriptPortDelegate(port, this@GeckoWebEngine).also {
+                            contentPortDelegates.add(it)
                             port.setDelegate(it)
                         }
                 }
