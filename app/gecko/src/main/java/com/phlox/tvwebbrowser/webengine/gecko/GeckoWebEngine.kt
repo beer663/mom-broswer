@@ -4,6 +4,7 @@ package com.phlox.tvwebbrowser.webengine.gecko
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Handler
 import android.os.Looper
@@ -508,7 +509,10 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
             webView.releaseSession()
         }
 
-        webView.coverUntilFirstPaint(Color.WHITE)
+        // Cover shown until the page paints: dark in dark mode, soft off-white otherwise (was bright white)
+        val isNightMode = (callback.getActivity().resources.configuration.uiMode and
+                Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        webView.coverUntilFirstPaint(if (isNightMode) 0xFF1B1B1B.toInt() else 0xFFE4E2DD.toInt())
         webView.setSession(session)
 
         if (session.isOpen && previousSession != null && previousSession != session) {
