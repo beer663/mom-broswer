@@ -60,6 +60,8 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         val TAG: String = GeckoWebEngine::class.java.simpleName
         lateinit var runtime: GeckoRuntime
         var appWebExtension = ObservableValue<WebExtension?>(null)
+        // true once the extension's background script is running (it swaps in the bundled home page)
+        @Volatile var extensionBackgroundReady = false
         var weakRefToSingleGeckoView: WeakReference<GeckoViewWithVirtualCursor?> =
             WeakReference(null)
         val uiHandler = Handler(Looper.getMainLooper())
@@ -305,6 +307,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 }
 
                 override fun onConnect(port: WebExtension.Port) {
+                    extensionBackgroundReady = true
                     appWebExtensionBackgroundPortDelegate =
                         AppWebExtensionBackgroundPortDelegate(
                             port,
@@ -334,6 +337,8 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 session.open(runtime)
             }
             session.restoreState(savedInstanceState)
+            homeLoadToken++
+            if (!extensionBackgroundReady) reloadHomePageOnceExtensionReady(homeLoadToken)
         } else {
             throw IllegalArgumentException("savedInstanceState is not SessionState")
         }
@@ -344,10 +349,47 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         return SessionState.fromString(jsString)
     }
 
+    private var homeLoadToken = 0
+
+    private fun isHomePageUrl(u: String?): Boolean {
+        return u != null &&
+            u.substringBefore('#').substringBefore('?').trimEnd('/') == Config.HOME_PAGE_URL.trimEnd('/')
+    }
+
+    /**
+     * The bundled home page is swapped in by the extension's background script. During app start that script
+     * may not be running yet, which would show the original remote page. So wait for it (max ~5 s).
+     */
+    private fun loadHomePageWhenExtensionReady(token: Int, attempt: Int = 0) {
+        if (token != homeLoadToken) return // something else was loaded meanwhile
+        if (extensionBackgroundReady || attempt >= 25) {
+            uiHandler.postDelayed({
+                if (token == homeLoadToken) session.loadUri(Config.HOME_PAGE_URL)
+            }, if (extensionBackgroundReady) 150L else 0L)
+        } else {
+            uiHandler.postDelayed({ loadHomePageWhenExtensionReady(token, attempt + 1) }, 200)
+        }
+    }
+
+    /** For a home page restored from a saved tab: reload it once the extension is ready. */
+    private fun reloadHomePageOnceExtensionReady(token: Int, attempt: Int = 0) {
+        if (token != homeLoadToken) return
+        if (extensionBackgroundReady) {
+            uiHandler.postDelayed({
+                if (token == homeLoadToken && isHomePageUrl(url)) {
+                    session.reload(GeckoSession.LOAD_FLAGS_BYPASS_CACHE)
+                }
+            }, 600)
+        } else if (attempt < 25) {
+            uiHandler.postDelayed({ reloadHomePageOnceExtensionReady(token, attempt + 1) }, 200)
+        }
+    }
+
     override fun loadUrl(url: String) {
         if (!session.isOpen) {
             session.open(runtime)
         }
+        homeLoadToken++
 
         if (Config.HOME_URL_ALIAS == url) {
             when (AppContext.provideConfig().homePageMode) {
@@ -361,7 +403,11 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 }
 
                 Config.HomePageMode.HOME_PAGE -> {
-                    session.loadUri(Config.HOME_PAGE_URL)
+                    if (extensionBackgroundReady) {
+                        session.loadUri(Config.HOME_PAGE_URL)
+                    } else {
+                        loadHomePageWhenExtensionReady(homeLoadToken)
+                    }
                 }
             }
         } else {
