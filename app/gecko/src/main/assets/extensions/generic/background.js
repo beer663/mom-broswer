@@ -21,8 +21,15 @@ tvBroPort.onMessage.addListener(response => {
 });
 //tvBroPort.postMessage("Hello from WebExtension!");
 
+const MEDIA_STREAM_URL = /\.(ts|m4s|m4v|m4a|aac|mp4|webm|mp3|m3u8|mpd)([?#]|$)/i;
+
 browser.webRequest.onBeforeRequest.addListener(
     function (details) {
+        // Video / audio stream data (HLS / DASH segments, media files) is never worth checking:
+        // asking the app about every segment only slows the stream down.
+        if (details.type === "media" || MEDIA_STREAM_URL.test(details.url)) {
+            return {};
+        }
         let id = details.requestId;
         let resolverRef = null;
         let promise = new Promise((resolve, reject) => {

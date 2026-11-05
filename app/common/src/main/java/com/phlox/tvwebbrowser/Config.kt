@@ -112,7 +112,7 @@ class Config(val prefs: SharedPreferences) {
 
     /** Virtual cursor max speed as a percent of the default (screen-width–based) cap. */
     var cursorMaxSpeedPercent: Int
-        get() = prefs.getInt(CURSOR_MAX_SPEED_PERCENT_KEY, 100)
+        get() = prefs.getInt(CURSOR_MAX_SPEED_PERCENT_KEY, 90)
             .coerceIn(CURSOR_PHYSICS_PERCENT_MIN, CURSOR_PHYSICS_PERCENT_MAX)
         set(value) {
             prefs.edit().putInt(
@@ -123,7 +123,7 @@ class Config(val prefs: SharedPreferences) {
 
     /** Virtual cursor acceleration as a percent of the default ramp-up per frame. */
     var cursorAccelerationPercent: Int
-        get() = prefs.getInt(CURSOR_ACCELERATION_PERCENT_KEY, 100)
+        get() = prefs.getInt(CURSOR_ACCELERATION_PERCENT_KEY, 90)
             .coerceIn(CURSOR_PHYSICS_PERCENT_MIN, CURSOR_PHYSICS_PERCENT_MAX)
         set(value) {
             prefs.edit().putInt(

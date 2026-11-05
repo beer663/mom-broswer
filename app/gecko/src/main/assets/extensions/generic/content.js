@@ -124,12 +124,12 @@ let tvbroUnmuteButton = null;
 function tvbroCreateVideoControls() {
     if (tvbroVideoControlsHost || !document.documentElement) return;
 
-    // One full-width overlay keeps the two controls on the same horizontal line.
-    // Both are positioned 35% down the current frame's viewport.
+    // One overlay keeps the two controls on the same horizontal line. It is placed at the top edge of the
+    // video box (see tvbroUpdateVideoControls), Unmute on the left and Full screen on the right.
     tvbroVideoControlsHost = document.createElement("div");
     tvbroVideoControlsHost.id = "tvbro-video-controls";
     tvbroVideoControlsHost.style.cssText =
-        "position:fixed;top:38vh;left:12px;right:12px;z-index:2147483647;" +
+        "position:fixed;top:0;left:0;width:250px;z-index:2147483647;" +
         "display:none;pointer-events:none;";
 
     const shadow = tvbroVideoControlsHost.attachShadow({ mode: "closed" });
@@ -195,11 +195,18 @@ function tvbroUpdateVideoControls() {
     if (!tvbroVideoControlsHost) return;
 
     const fullscreen = !!(document.fullscreenElement || document.mozFullScreenElement);
-    const video = tvbroBestVideo();
+    const candidate = tvbroVideoCandidate();
+    const video = candidate ? candidate.video : null;
     const hasVideo = video !== null;
 
     // Hide both controls while the selected video is in fullscreen.
     tvbroVideoControlsHost.style.display = hasVideo && !fullscreen ? "block" : "none";
+    if (hasVideo) {
+        // top edge of the video box (the part that is on screen), a little inside
+        tvbroVideoControlsHost.style.top = (candidate.top + 8) + "px";
+        tvbroVideoControlsHost.style.left = (candidate.left + 8) + "px";
+        tvbroVideoControlsHost.style.width = Math.max(candidate.right - candidate.left - 16, 250) + "px";
+    }
     if (tvbroUnmuteButton) {
         tvbroUnmuteButton.hidden = !hasVideo || !tvbroVideoIsMuted(video);
     }
@@ -222,8 +229,12 @@ document.addEventListener("mozfullscreenchange", tvbroUpdateVideoControls, true)
 let tvbroLastVideoState = false;
 let tvbroVideoCheckTimer = null;
 
+// true while a video is playing: background checks run less often (saves CPU on weak devices)
+let tvbroSlowChecks = false;
+
 function tvbroReportVideoState() {
     tvbroVideoCheckTimer = null;
+    tvbroSlowChecks = Array.prototype.some.call(document.querySelectorAll("video"), v => !v.paused && !v.ended);
     tvbroUpdateVideoControls();
     tvbroAutoplayScan();
     const present = tvbroBestVideo() !== null;
@@ -236,20 +247,38 @@ function tvbroReportVideoState() {
     }
 }
 
+// page changes / safety-net timer: relaxed while a video is playing
 function tvbroScheduleVideoCheck() {
     if (tvbroVideoCheckTimer === null) {
-        tvbroVideoCheckTimer = setTimeout(tvbroReportVideoState, 300);
+        tvbroVideoCheckTimer = setTimeout(tvbroReportVideoState, tvbroSlowChecks ? 1500 : 300);
     }
+}
+
+// video events (play, pause, volume...): react quickly
+function tvbroScheduleVideoCheckNow() {
+    if (tvbroVideoCheckTimer !== null) clearTimeout(tvbroVideoCheckTimer);
+    tvbroVideoCheckTimer = setTimeout(tvbroReportVideoState, 300);
+}
+
+// scroll / resize: keep the controls on the video box, at most once per frame
+let tvbroRepositionPending = false;
+function tvbroScheduleReposition() {
+    if (tvbroRepositionPending) return;
+    tvbroRepositionPending = true;
+    requestAnimationFrame(() => {
+        tvbroRepositionPending = false;
+        tvbroUpdateVideoControls();
+    });
 }
 
 // video appeared / was removed / changed
 new MutationObserver(tvbroScheduleVideoCheck).observe(document, { childList: true, subtree: true });
 // media events don't bubble, so listen in the capture phase
 ["loadedmetadata", "play", "playing", "pause", "emptied", "resize", "volumechange"].forEach(name =>
-    document.addEventListener(name, tvbroScheduleVideoCheck, true));
+    document.addEventListener(name, tvbroScheduleVideoCheckNow, true));
 // scrolled / resized (video moved on or off screen)
-window.addEventListener("scroll", tvbroScheduleVideoCheck, { passive: true });
-window.addEventListener("resize", tvbroScheduleVideoCheck);
+window.addEventListener("scroll", tvbroScheduleReposition, { passive: true });
+window.addEventListener("resize", tvbroScheduleReposition);
 // cheap safety net for anything the above misses (players that resize without events)
 setInterval(tvbroScheduleVideoCheck, 2000);
 
