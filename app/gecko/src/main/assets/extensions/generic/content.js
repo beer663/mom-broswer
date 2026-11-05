@@ -38,6 +38,85 @@ function tvbroVideoIsMuted(video) {
     return !!video && (video.muted || video.volume === 0);
 }
 
+
+// ---- Button actions (shared by the buttons themselves and the tap detection below) ----
+let tvbroLastActivation = 0;
+function tvbroActivate(which) {
+    const now = Date.now();
+    if (now - tvbroLastActivation < 600) return; // one tap produces pointerup + touchend + click
+    tvbroLastActivation = now;
+    if (which === "unmute") tvbroDoUnmute(); else tvbroDoFullscreen();
+}
+
+function tvbroDoUnmute() {
+    const video = tvbroBestVideo();
+    if (!video) return;
+    try {
+        // Clear both the HTML attribute and media-element properties; some
+        // players set the muted attribute again when they initialize.
+        video.removeAttribute("muted");
+        video.defaultMuted = false;
+        video.muted = false;
+        if (video.volume === 0) video.volume = 1;
+    } catch (e) {
+        console.log("TV Bro: video unmute failed:", e);
+    }
+    tvbroUpdateVideoControls();
+}
+
+function tvbroDoFullscreen() {
+    const video = tvbroBestVideo();
+    if (!video) return;
+    const request = video.requestFullscreen || video.mozRequestFullScreen;
+    if (typeof request !== "function") return;
+    try {
+        const result = request.call(video);
+        if (result && typeof result.catch === "function") {
+            result.catch(e => console.log("TV Bro: fullscreen request rejected:", e));
+        }
+    } catch (e) {
+        console.log("TV Bro: fullscreen request failed:", e);
+    }
+}
+
+// Tap detection by position: a tap anywhere on a button (plus a margin around it) activates it,
+// no matter which inner element the browser reports as the target.
+function tvbroButtonAt(x, y) {
+    if (!tvbroVideoControlsHost || tvbroVideoControlsHost.style.display === "none") return null;
+    const MARGIN = 6;
+    const candidates = [[tvbroUnmuteButton, "unmute"], [tvbroFullscreenButton, "fullscreen"]];
+    for (const [button, name] of candidates) {
+        if (!button || button.hidden) continue;
+        const r = button.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) continue;
+        if (x >= r.left - MARGIN && x <= r.right + MARGIN && y >= r.top - MARGIN && y <= r.bottom + MARGIN) {
+            return name;
+        }
+    }
+    return null;
+}
+
+function tvbroEventPoint(e) {
+    if (typeof e.clientX === "number") return { x: e.clientX, y: e.clientY };
+    const t = e.changedTouches && e.changedTouches[0];
+    return t ? { x: t.clientX, y: t.clientY } : null;
+}
+
+function tvbroOnTapCapture(e) {
+    if (!e.isTrusted) return;
+    const p = tvbroEventPoint(e);
+    if (!p) return;
+    const which = tvbroButtonAt(p.x, p.y);
+    if (!which) return;
+    e.preventDefault();
+    e.stopImmediatePropagation(); // the page underneath must not react to this tap
+    if (e.type === "pointerup" || e.type === "touchend" || e.type === "mouseup" || e.type === "click") {
+        tvbroActivate(which);
+    }
+}
+["pointerdown", "mousedown", "touchstart", "pointerup", "mouseup", "touchend", "click"].forEach(type =>
+    window.addEventListener(type, tvbroOnTapCapture, { capture: true, passive: false }));
+
 let tvbroVideoControlsHost = null;
 let tvbroFullscreenButton = null;
 let tvbroUnmuteButton = null;
@@ -61,6 +140,7 @@ function tvbroCreateVideoControls() {
             width:100%;pointer-events:none;
         }
         button {
+            position:relative;
             box-sizing:border-box;min-width:112px;height:48px;padding:0 13px;
             border-radius:26px;border:1px solid #d8dee8;
             background:#30363d;color:#fff;
@@ -76,6 +156,9 @@ function tvbroCreateVideoControls() {
             outline:2px solid #fff;outline-offset:2px;background:#454b52;
         }
         button svg { width:22px;height:22px;display:block;flex:none;fill:#fff; }
+        /* every part of the button counts, plus a thin safety margin around it */
+        button::before { content:"";position:absolute;top:-6px;right:-6px;bottom:-6px;left:-6px; }
+        button * { pointer-events:none; }
         button[hidden] { display:none !important; }
     `;
 
@@ -89,23 +172,7 @@ function tvbroCreateVideoControls() {
     tvbroUnmuteButton.title = "Unmute video";
     tvbroUnmuteButton.innerHTML =
         '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M15.5 8.5a5 5 0 0 1 0 7l1.4 1.4a7 7 0 0 0 0-9.8l-1.4 1.4zM18.3 5.7a9 9 0 0 1 0 12.6l1.4 1.4a11 11 0 0 0 0-15.4l-1.4 1.4z"/></svg><span>Unmute</span>';
-    tvbroUnmuteButton.addEventListener("click", function (event) {
-        event.preventDefault();
-        event.stopPropagation();
-        const video = tvbroBestVideo();
-        if (!video) return;
-        try {
-            // Clear both the HTML attribute and media-element properties; some
-            // players set the muted attribute again when they initialize.
-            video.removeAttribute("muted");
-            video.defaultMuted = false;
-            video.muted = false;
-            if (video.volume === 0) video.volume = 1;
-        } catch (e) {
-            console.log("TV Bro: video unmute failed:", e);
-        }
-        tvbroUpdateVideoControls();
-    }, true);
+    tvbroUnmuteButton.addEventListener("click", () => tvbroActivate("unmute"), true);
 
     // Right control: request fullscreen directly from this trusted page click.
     tvbroFullscreenButton = document.createElement("button");
@@ -114,22 +181,7 @@ function tvbroCreateVideoControls() {
     tvbroFullscreenButton.title = "Make video full screen";
     tvbroFullscreenButton.innerHTML =
         '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h5v2H7v3H5V5zm9 0h5v5h-2V7h-3V5zM5 14h2v5h5v-2H7v-3H5zm14 0h-2v3h-3v2h5v-5z"/><rect x="9" y="9" width="6" height="6" rx=".5"/></svg><span>Full screen</span>';
-    tvbroFullscreenButton.addEventListener("click", function (event) {
-        event.preventDefault();
-        event.stopPropagation();
-        const video = tvbroBestVideo();
-        if (!video) return;
-        const request = video.requestFullscreen || video.mozRequestFullScreen;
-        if (typeof request !== "function") return;
-        try {
-            const result = request.call(video);
-            if (result && typeof result.catch === "function") {
-                result.catch(e => console.log("TV Bro: fullscreen request rejected:", e));
-            }
-        } catch (e) {
-            console.log("TV Bro: fullscreen request failed:", e);
-        }
-    }, true);
+    tvbroFullscreenButton.addEventListener("click", () => tvbroActivate("fullscreen"), true);
 
     controls.appendChild(tvbroUnmuteButton);
     controls.appendChild(tvbroFullscreenButton);
@@ -173,6 +225,7 @@ let tvbroVideoCheckTimer = null;
 function tvbroReportVideoState() {
     tvbroVideoCheckTimer = null;
     tvbroUpdateVideoControls();
+    tvbroAutoplayScan();
     const present = tvbroBestVideo() !== null;
     if (present === tvbroLastVideoState) return;
     tvbroLastVideoState = present;
@@ -199,3 +252,141 @@ window.addEventListener("scroll", tvbroScheduleVideoCheck, { passive: true });
 window.addEventListener("resize", tvbroScheduleVideoCheck);
 // cheap safety net for anything the above misses (players that resize without events)
 setInterval(tvbroScheduleVideoCheck, 2000);
+
+
+// ---- Autoplay: start every video that is on screen, however small or large (always on) ----
+const tvbroAutoplayEnabled = true; // autoplay is always on (no setting)
+const tvbroAutoplayInfo = new WeakMap(); // video -> { attempts, played, userPaused }
+const tvbroObservedVideos = new WeakSet();
+
+function tvbroVideoOnScreen(v) {
+    const r = v.getBoundingClientRect();
+    return r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 &&
+        r.top < window.innerHeight && r.left < window.innerWidth;
+}
+
+// Start playback; if the browser refuses (video with sound), start it muted. The Unmute button turns sound on.
+function tvbroStartPlayback(video) {
+    const start = () => {
+        const p = video.play();
+        return (p && p.then) ? p : Promise.resolve();
+    };
+    start().catch(() => {
+        try {
+            video.muted = true;
+            start().catch(() => {});
+        } catch (_) {}
+    });
+}
+
+// Many players show a big "click to play" button/poster and only load the stream after it is pressed.
+// These are the usual ones; they are only looked for inside the video's own player container.
+const TVBRO_PLAY_OVERLAY_SELECTORS = [
+    ".player-poster", ".play-wrapper", ".poster-icon",              // Clappr
+    ".vjs-big-play-button",                                         // Video.js
+    ".jw-display-icon-container", ".jw-icon-display",               // JW Player
+    ".plyr__control--overlaid",                                     // Plyr
+    ".ytp-large-play-button",                                       // YouTube
+    "[class*='big-play']", "[class*='bigplay']", "[class*='play-button']", "[class*='playbutton']",
+    "[class*='play-btn']", "[aria-label='Play']", "[title='Play']"
+].join(",");
+
+function tvbroClickPlayOverlay(video) {
+    let container = video.parentElement;
+    for (let depth = 0; container && depth < 6; depth++, container = container.parentElement) {
+        let found;
+        try { found = container.querySelectorAll(TVBRO_PLAY_OVERLAY_SELECTORS); } catch (_) { return false; }
+        for (const el of found) {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) continue;
+            el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+            return true;
+        }
+        if (container === document.body) break;
+    }
+    return false;
+}
+
+function tvbroTryAutoplay(video) {
+    if (!tvbroAutoplayEnabled || !video.isConnected) return;
+    let info = tvbroAutoplayInfo.get(video);
+    if (!info) {
+        info = { attempts: 0, overlayClicks: 0, overlayTimer: null, played: false, userPaused: false };
+        tvbroAutoplayInfo.set(video, info);
+    }
+    if (info.userPaused || video.ended || !video.paused) return;
+    if (info.attempts < 6) {
+        info.attempts++;
+        tvbroStartPlayback(video);
+    }
+    // still not playing a moment later: the player probably waits for a tap on its play button, so press it
+    if (info.overlayTimer === null && info.overlayClicks < 3) {
+        info.overlayTimer = setTimeout(() => {
+            info.overlayTimer = null;
+            if (!video.isConnected || info.userPaused || video.ended || !video.paused) return;
+            info.overlayClicks++;
+            if (tvbroClickPlayOverlay(video)) {
+                setTimeout(() => {
+                    if (video.isConnected && video.paused && !video.ended && !info.userPaused) tvbroStartPlayback(video);
+                }, 1200);
+            }
+        }, 1500);
+    }
+}
+
+const tvbroVideoObserver = ("IntersectionObserver" in window)
+    ? new IntersectionObserver(entries => {
+        entries.forEach(en => { if (en.isIntersecting) tvbroTryAutoplay(en.target); });
+    }, { threshold: 0 })
+    : null;
+
+function tvbroAutoplayScan() {
+    document.querySelectorAll("video").forEach(v => {
+        if (!tvbroObservedVideos.has(v)) {
+            tvbroObservedVideos.add(v);
+            if (tvbroVideoObserver) tvbroVideoObserver.observe(v);
+        }
+        if (tvbroAutoplayEnabled && tvbroVideoOnScreen(v)) tvbroTryAutoplay(v);
+    });
+}
+
+// a video that was playing and then paused (not because it ended) was paused on purpose: leave it alone
+document.addEventListener("playing", e => {
+    const info = tvbroAutoplayInfo.get(e.target);
+    if (info) info.played = true;
+}, true);
+document.addEventListener("pause", e => {
+    const v = e.target;
+    const info = tvbroAutoplayInfo.get(v);
+    if (info && info.played && !v.ended) info.userPaused = true;
+}, true);
+// a new source was loaded into the video: start fresh
+document.addEventListener("loadstart", e => {
+    const info = tvbroAutoplayInfo.get(e.target);
+    if (info) { info.attempts = 0; info.overlayClicks = 0; info.played = false; info.userPaused = false; }
+}, true);
+["loadedmetadata", "loadeddata", "durationchange", "canplay"].forEach(name =>
+    document.addEventListener(name, e => {
+        if (e.target && e.target.tagName === "VIDEO" && tvbroVideoOnScreen(e.target)) tvbroTryAutoplay(e.target);
+    }, true));
+
+
+// ---- Embedded players (iframes): a page must allow autoplay / fullscreen for them, so add it ----
+function tvbroAllowIframe(f) {
+    try {
+        const current = f.getAttribute("allow") || "";
+        const lower = current.toLowerCase();
+        const missing = ["autoplay", "fullscreen"].filter(name => !lower.includes(name));
+        if (missing.length > 0) {
+            f.setAttribute("allow", (current ? current + "; " : "") + missing.join("; "));
+        }
+    } catch (_) {}
+}
+document.querySelectorAll("iframe").forEach(tvbroAllowIframe);
+new MutationObserver(mutations => {
+    mutations.forEach(m => m.addedNodes.forEach(n => {
+        if (n.nodeType !== 1) return;
+        if (n.tagName === "IFRAME") tvbroAllowIframe(n);
+        else if (n.querySelectorAll) n.querySelectorAll("iframe").forEach(tvbroAllowIframe);
+    }));
+}).observe(document, { childList: true, subtree: true });

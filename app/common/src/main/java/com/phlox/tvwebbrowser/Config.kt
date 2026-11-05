@@ -185,10 +185,11 @@ class Config(val prefs: SharedPreferences) {
             prefs.edit().putString(WEB_ENGINE, value).apply()
         }
 
+    // Autoplay is always on: there is no user setting for it any more
     var allowAutoplayMedia: Boolean
-        get() = prefs.getBoolean(ALLOW_AUTOPLAY_MEDIA, true)
+        get() = true
         set(value) {
-            prefs.edit().putBoolean(ALLOW_AUTOPLAY_MEDIA, value).apply()
+            // ignored on purpose
         }
 
     var webviewUseAlgorithmicDarkeningWithDarkUiMode: Boolean

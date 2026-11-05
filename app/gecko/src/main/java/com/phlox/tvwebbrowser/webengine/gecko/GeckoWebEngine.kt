@@ -7,10 +7,12 @@ import android.graphics.Bitmap
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Handler
+import android.util.Log
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import androidx.annotation.UiThread
+import org.json.JSONObject
 import com.phlox.tvwebbrowser.AppContext
 import com.phlox.tvwebbrowser.Config
 import com.phlox.tvwebbrowser.model.WebTabState
@@ -54,7 +56,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
     companion object {
         const val ENGINE_NAME = "GeckoView"
-        private const val APP_WEB_EXTENSION_VERSION = 54
+        private const val APP_WEB_EXTENSION_VERSION = 58
         private const val ADGUARD_DNS_URL = "https://dns.adguard-dns.com/dns-query"
 
         val TAG: String = GeckoWebEngine::class.java.simpleName
