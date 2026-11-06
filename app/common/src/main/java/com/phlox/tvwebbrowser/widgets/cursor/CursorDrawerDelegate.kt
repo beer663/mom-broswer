@@ -435,8 +435,12 @@ class CursorDrawerDelegate(val context: Context, val surface: View) {
                 dispatchMotionEvent(cursorPosition.x, cursorPosition.y, MotionEvent.ACTION_MOVE)
             }
 
-            surface.invalidate()
-            surface.post(this)
+            // Align cursor updates with display frames instead of running an unbounded
+            // UI-thread loop. Only redraw when the cursor actually moved.
+            if (tmpPointF.x != cursorPosition.x || tmpPointF.y != cursorPosition.y) {
+                surface.invalidate()
+            }
+            surface.postOnAnimation(this)
         }
     }
 
