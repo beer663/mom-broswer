@@ -399,38 +399,42 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     }
 
     /**
-     * The bundled home page is swapped in by the extension's background script. During app start that script
-     * may not be running yet, which would show the original remote page. So wait for it (max ~5 s).
+     * The bundled homepage depends on the extension background script. On a cold
+     * launch, wait for both that script and a measured, attached GeckoView.
+     * Do not force a homepage load after five seconds if initialization stalls.
      */
     private fun loadHomePageWhenExtensionReady(token: Int, attempt: Int = 0) {
-        if (token != homeLoadToken) return // something else was loaded meanwhile
-        if (extensionBackgroundReady) {
-            uiHandler.postDelayed({
-                if (token == homeLoadToken && session.isOpen && extensionBackgroundReady) {
+        if (token != homeLoadToken || !session.isOpen) return
+        val view = webView
+        if (extensionBackgroundReady && view != null && view.isAttachedToWindow &&
+            view.width > 0 && view.height > 0) {
+            // Run on the view queue, after the current layout pass.
+            view.post {
+                if (token == homeLoadToken && session.isOpen && extensionBackgroundReady &&
+                    view.isAttachedToWindow && view.width > 0 && view.height > 0) {
                     session.loadUri(Config.HOME_PAGE_URL)
                 }
-            }, 150L)
-        } else if (attempt >= 25) {
-            // Diagnostic safety guard: do not load the extension-backed homepage
-            // before its extension has initialized. This avoids forcing a load
-            // after five seconds when startup has already failed or stalled.
-            Log.e(TAG, "Homepage extension not ready after 5 seconds; skipping forced load")
+            }
+        } else if (attempt < 75) {
+            uiHandler.postDelayed({ loadHomePageWhenExtensionReady(token, attempt + 1) }, 200L)
         } else {
-            uiHandler.postDelayed({ loadHomePageWhenExtensionReady(token, attempt + 1) }, 200)
+            Log.e(TAG, "Homepage not ready after 15 seconds; not forcing premature load")
         }
     }
 
-    /** For a home page restored from a saved tab: reload it once the extension is ready. */
+    /** Reload a restored homepage only after extension and display are ready. */
     private fun reloadHomePageOnceExtensionReady(token: Int, attempt: Int = 0) {
-        if (token != homeLoadToken) return
-        if (extensionBackgroundReady) {
-            uiHandler.postDelayed({
+        if (token != homeLoadToken || !session.isOpen) return
+        val view = webView
+        if (extensionBackgroundReady && view != null && view.isAttachedToWindow &&
+            view.width > 0 && view.height > 0) {
+            view.post {
                 if (token == homeLoadToken && session.isOpen && isHomePageUrl(url)) {
                     session.reload(GeckoSession.LOAD_FLAGS_BYPASS_CACHE)
                 }
-            }, 600)
-        } else if (attempt < 25) {
-            uiHandler.postDelayed({ reloadHomePageOnceExtensionReady(token, attempt + 1) }, 200)
+            }
+        } else if (attempt < 75) {
+            uiHandler.postDelayed({ reloadHomePageOnceExtensionReady(token, attempt + 1) }, 200L)
         }
     }
 
@@ -452,11 +456,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 }
 
                 Config.HomePageMode.HOME_PAGE -> {
-                    if (extensionBackgroundReady) {
-                        session.loadUri(Config.HOME_PAGE_URL)
-                    } else {
-                        loadHomePageWhenExtensionReady(homeLoadToken)
-                    }
+                    loadHomePageWhenExtensionReady(homeLoadToken)
                 }
             }
         } else {
