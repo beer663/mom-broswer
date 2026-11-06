@@ -102,7 +102,6 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 )
 
                 runtime = GeckoRuntime.create(context, builder.build())
-                enableSoftwareWebRenderForDiagnostics()
                 disableSoftwareAv1()
 
                 val webExtInstallResult =
@@ -143,31 +142,6 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
          * so they choose VP9 or H.264, which the hardware decodes. (Same fix as upstream TV Bro; the preference
          * is set through reflection so an older GeckoView without this API only logs a warning.)
          */
-        /**
-         * Diagnostic workaround for corrupted Gecko webpage pixels on some Android TV GPUs.
-         * This changes Gecko's webpage compositor preference, NOT Android's hardware video
-         * decoding configuration. Preference availability varies by GeckoView version.
-         */
-        private fun enableSoftwareWebRenderForDiagnostics() {
-            try {
-                val controller = Class.forName("org.mozilla.geckoview.GeckoPreferenceController")
-                val branch = controller.getField("PREF_BRANCH_DEFAULT").getInt(null)
-                val method = controller.methods.firstOrNull {
-                    it.name == "setGeckoPref" && it.parameterTypes.size == 3 &&
-                        (it.parameterTypes[1] == Boolean::class.javaPrimitiveType ||
-                         it.parameterTypes[1] == Boolean::class.javaObjectType)
-                }
-                if (method == null) {
-                    Log.w(TAG, "Software WebRender pref API unavailable; rendering unchanged")
-                    return
-                }
-                method.invoke(null, "gfx.webrender.software", true, branch)
-                Log.i(TAG, "Requested software WebRender (diagnostic workaround)")
-            } catch (e: Throwable) {
-                Log.w(TAG, "Could not request software WebRender", e)
-            }
-        }
-
         private fun disableSoftwareAv1() {
             try {
                 if (com.phlox.tvwebbrowser.utils.HardwareCodecs.hasHardwareDecoder(
