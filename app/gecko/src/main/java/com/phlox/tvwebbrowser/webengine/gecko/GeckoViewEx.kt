@@ -19,7 +19,7 @@ open class GeckoViewEx @JvmOverloads constructor(context: Context, attrs: Attrib
 
     companion object {
         // Set to false to turn thumbnail screenshots off completely (diagnostic switch).
-        private const val THUMBNAILS_ENABLED = false
+        private const val THUMBNAILS_ENABLED = true
 
         // Diagnostic switch: draw pages through a TextureView (normal GPU composition)
         // instead of the default SurfaceView (which some TVs show through a hardware

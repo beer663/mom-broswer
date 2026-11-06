@@ -439,6 +439,10 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
 
         vb.progressBarGeneric.visibility = View.GONE
 
+        // Restored tabs can contain a saved GeckoSession that never issues a new
+        // homepage navigation. Remember whether we are restoring, so we can load
+        // the bundled homepage once after the view has been attached below.
+        val restoringSavedTabs = intent.data == null && tabsModel.tabsStates.isNotEmpty()
         if (intent.data == null) {
             if (tabsModel.tabsStates.isEmpty()) {
                 openInNewTab(settingsModel.homePage, 0,
@@ -464,7 +468,24 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
         }
 
         val currentTab = tabsModel.currentTab.value
-        if (currentTab == null || currentTab.url == settingsModel.homePage) {
+        val isBundledHome = config.homePageMode == Config.HomePageMode.HOME_PAGE &&
+            currentTab != null &&
+            (currentTab.url == Config.HOME_URL_ALIAS ||
+                currentTab.url.substringBefore('#').substringBefore('?').trimEnd('/') ==
+                    Config.HOME_PAGE_URL.trimEnd('/'))
+        if (isBundledHome) {
+            // The Home button already performs this navigation. Do it once for
+            // a restored homepage as well, instead of showing a stale/blank
+            // saved GeckoSession until the user presses Home manually.
+            if (restoringSavedTabs) {
+                Log.i(TAG, "Reloading restored bundled homepage on launch")
+                currentTab?.webEngine?.loadUrl(Config.HOME_URL_ALIAS)
+            }
+            // Thumbnail capture is disabled by the current graphics diagnostic.
+            // Opening the menu here hides the live GeckoView and leaves a blank
+            // thumbnail area, which looks like the homepage did not load.
+            vb.flWebViewContainer.visibility = View.VISIBLE
+        } else if (currentTab == null || currentTab.url == settingsModel.homePage) {
             showMenuOverlay()
         }
         if (autoUpdateModel.needAutoCheckUpdates &&
@@ -764,10 +785,11 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
 
     fun navigate(url: String) {
         Log.d(TAG, "navigate: $url")
-        if (isDirectNativeStream(url)) {
-            openNativeStream(url)
-            return
-        }
+        // Do not automatically launch Media3 when a live TV site sends us a
+        // playlist URL. The website stays visible so the user can select
+        // a working video server and use the in-page Unmute/Fullscreen buttons.
+        // The separate NativeStreamActivity remains in the app for future
+        // explicitly requested native playback.
         vb.vActionBar.setAddressBoxTextColor(ContextCompat.getColor(this@MainActivity, R.color.default_url_color))
         val tab = tabsModel.currentTab.value
         if (tab != null) {
@@ -1109,12 +1131,10 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
 
     private inner class WebEngineCallback(val tab: WebTabState) : WebEngineWindowProviderCallback {
         override fun onNativeStreamDetected(url: String, origin: String) {
-            // Embedded HLS/DASH playlists belong to the site's own video player.
-            // Do not launch fullscreen NativeStreamActivity for those requests:
-            // the user must be able to change servers and use the existing
-            // in-page Unmute and Full screen controls (generic/content.js).
-            // Direct .m3u8/.mpd URLs still use Media3 from navigate(url).
-            Log.d(TAG, "Embedded media detected; leaving video inline in webpage")
+            // GeckoView's extension may still report HLS/DASH playlist requests.
+            // Never take over an embedded website video automatically.
+            // In particular, keep playback in the site's chosen server/player.
+            Log.d(TAG, "Inline playback: native takeover disabled")
         }
 
         override fun getActivity(): Activity {
