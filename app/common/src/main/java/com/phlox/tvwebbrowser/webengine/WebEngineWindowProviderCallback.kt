@@ -44,6 +44,8 @@ interface WebEngineWindowProviderCallback {
     fun getHomePageLinks(): List<HomePageLink>
     /** Called when a video appears on / disappears from the page (GeckoView only). */
     fun onVideoPresenceChanged(present: Boolean) {}
+    /** Non-blocking playlist observation from the GeckoView extension. */
+    fun onNativeStreamDetected(url: String, origin: String) {}
     fun onPrepareForFullscreen()
     fun onExitFullscreen()
     fun onVisited(url: String)

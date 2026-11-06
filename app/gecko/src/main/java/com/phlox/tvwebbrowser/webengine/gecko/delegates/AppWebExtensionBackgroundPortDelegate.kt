@@ -42,6 +42,17 @@ class AppWebExtensionBackgroundPortDelegate(
 
     override fun onPortMessage(message: Any, port: WebExtension.Port) {
         val msgJson = message as? JSONObject ?: return
+        if (msgJson.optString("action") == "onNativeStreamDetected") {
+            val url = msgJson.optString("url")
+            val origin = msgJson.optString("origin")
+            if (url.isNotBlank() && origin.isNotBlank()) {
+                mainHandler.post {
+                    try { (GeckoWebEngine.activeCallback ?: webEngine.callback)?.onNativeStreamDetected(url, origin) }
+                    catch (e: Exception) { Log.w(TAG, "Native stream handoff failed", e) }
+                }
+            }
+            return
+        }
         if (msgJson.optString("action") != "onBeforeRequest") return
         val details = msgJson.optJSONObject("details") ?: return
         // the script keys the request by this id; without it there is nothing to answer

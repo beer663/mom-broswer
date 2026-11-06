@@ -661,6 +661,13 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
             return
         }
         when (requestCode) {
+            nativeStreamRequestCode -> {
+                nativeStreamActive = false
+                if (resultCode == Activity.RESULT_CANCELED &&
+                    data?.getBooleanExtra(com.phlox.tvwebbrowser.activity.player.NativeStreamActivity.EXTRA_FAILED, false) == true) {
+                    data.getStringExtra(com.phlox.tvwebbrowser.activity.player.NativeStreamActivity.EXTRA_URL)?.let { nativeStreamFailures.add(it) }
+                }
+            }
             PICK_FILE_REQUEST_CODE -> {
                 tabsModel.currentTab.value?.webEngine?.onFilePicked(resultCode, data)
             }
@@ -741,9 +748,18 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
         return path.endsWith(".m3u8") || path.endsWith(".mpd")
     }
 
-    private fun openNativeStream(url: String) {
-        startActivity(Intent(this, com.phlox.tvwebbrowser.activity.player.NativeStreamActivity::class.java)
-            .putExtra(com.phlox.tvwebbrowser.activity.player.NativeStreamActivity.EXTRA_URL, url))
+    private val nativeStreamFailures = mutableSetOf<String>()
+    private var nativeStreamLaunchAt = 0L
+    private var nativeStreamActive = false
+    private val nativeStreamRequestCode = 7351
+
+    private fun openNativeStream(url: String, origin: String? = null) {
+        val intent = Intent(this, com.phlox.tvwebbrowser.activity.player.NativeStreamActivity::class.java)
+            .putExtra(com.phlox.tvwebbrowser.activity.player.NativeStreamActivity.EXTRA_URL, url)
+        if (!origin.isNullOrBlank()) intent.putExtra(com.phlox.tvwebbrowser.activity.player.NativeStreamActivity.EXTRA_REFERER, origin)
+        nativeStreamActive = true
+        @Suppress("DEPRECATION")
+        startActivityForResult(intent, nativeStreamRequestCode)
     }
 
     fun navigate(url: String) {
@@ -1092,6 +1108,19 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
     }
 
     private inner class WebEngineCallback(val tab: WebTabState) : WebEngineWindowProviderCallback {
+        override fun onNativeStreamDetected(url: String, origin: String) {
+            if (nativeStreamActive || tabsModel.currentTab.value !== tab) return
+            if (!isDirectNativeStream(url) || nativeStreamFailures.contains(url)) return
+            val page = tab.url
+            if (!page.startsWith("http://") && !page.startsWith("https://")) return
+            // Ignore playlists from the homepage, unrelated tabs and background requests.
+            if (page.contains("/appcontent/home/")) return
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (now - nativeStreamLaunchAt < 10000L) return
+            nativeStreamLaunchAt = now
+            openNativeStream(url, origin)
+        }
+
         override fun getActivity(): Activity {
             return this@MainActivity
         }

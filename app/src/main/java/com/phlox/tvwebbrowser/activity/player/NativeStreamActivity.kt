@@ -22,7 +22,11 @@ import androidx.media3.ui.PlayerView
 
 /** Direct HLS/DASH player. Mirrors the GeckoView overlay controls for TV remote use. */
 class NativeStreamActivity : Activity() {
-    companion object { const val EXTRA_URL = "native_stream_url" }
+    companion object {
+        const val EXTRA_URL = "native_stream_url"
+        const val EXTRA_REFERER = "native_stream_referer"
+        const val EXTRA_FAILED = "native_stream_failed"
+    }
     private var player: ExoPlayer? = null
     private lateinit var playerView: PlayerView
     private lateinit var overlayButton: Button
@@ -93,12 +97,21 @@ class NativeStreamActivity : Activity() {
             return
         }
         val mime = if (path.endsWith(".m3u8")) MimeTypes.APPLICATION_M3U8 else MimeTypes.APPLICATION_MPD
-        val exo = ExoPlayer.Builder(this).build()
+        val referer = intent.getStringExtra(EXTRA_REFERER)
+        val headers = if (referer?.startsWith("http") == true) mapOf("Referer" to referer) else emptyMap()
+        val httpFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+            .setDefaultRequestProperties(headers)
+            .setAllowCrossProtocolRedirects(true)
+        val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(this, httpFactory)
+        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory)
+        val exo = ExoPlayer.Builder(this).setMediaSourceFactory(mediaSourceFactory).build()
         player = exo
         playerView.player = exo
         exo.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 Toast.makeText(this@NativeStreamActivity, "Native playback failed. Returning to browser.", Toast.LENGTH_LONG).show()
+                setResult(RESULT_CANCELED, android.content.Intent().putExtra(EXTRA_FAILED, true)
+                    .putExtra(EXTRA_URL, intent.getStringExtra(EXTRA_URL)))
                 finish()
             }
         })

@@ -21,6 +21,26 @@ tvBroPort.onMessage.addListener(response => {
 });
 //tvBroPort.postMessage("Hello from WebExtension!");
 
+// Phase 7: observe playlist requests without blocking or delaying playback.
+// Only playlist manifests trigger a native handoff, never media segments.
+const TVBRO_PLAYLIST = /\.(m3u8|mpd)(?:[?#]|$)/i;
+const tvbroReported = new Map();
+browser.webRequest.onBeforeRequest.addListener(details => {
+    if (!TVBRO_PLAYLIST.test(details.url)) return;
+    const origin = details.originUrl || details.documentUrl || "";
+    if (!/^https?:\/\//i.test(origin)) return;
+    const now = Date.now();
+    if (now - (tvbroReported.get(details.url) || 0) < 30000) return;
+    tvbroReported.set(details.url, now);
+    if (tvbroReported.size > 100) {
+        for (const [url, when] of tvbroReported) {
+            if (now - when > 60000) tvbroReported.delete(url);
+        }
+    }
+    try { tvBroPort.postMessage({action: "onNativeStreamDetected", url: details.url, origin: origin}); }
+    catch (e) { console.warn("Native stream notification failed", e); }
+}, {urls: ["<all_urls>"], types: ["xmlhttprequest", "media", "other"]});
+
 const MEDIA_STREAM_URL = /\.(ts|m4s|m4v|m4a|aac|mp4|webm|mp3|m3u8|mpd)([?#]|$)/i;
 
 browser.webRequest.onBeforeRequest.addListener(
