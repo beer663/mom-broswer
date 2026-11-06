@@ -18,8 +18,13 @@ object HardwareCodecs {
             Log.w(TAG, "No codec list", e)
             return false
         }
+        // Secure-only decoders cannot be used for ordinary unprotected web video.
+        // Excluding them prevents falsely advertising hardware AV1 support.
         return codecs.any { info ->
-            !info.isEncoder && info.supportedTypes.any { it.equals(mime, ignoreCase = true) } && isHardware(info)
+            !info.isEncoder &&
+                !info.name.endsWith(".secure", ignoreCase = true) &&
+                info.supportedTypes.any { it.equals(mime, ignoreCase = true) } &&
+                isHardware(info)
         }
     }
 
@@ -34,6 +39,6 @@ object HardwareCodecs {
         if (hardwareAccelerated != null) return hardwareAccelerated
         val n = name.lowercase()
         return !(n.startsWith("omx.google.") || n.startsWith("c2.android.") || n.startsWith("c2.google.") ||
-                n.contains(".sw.") || n.contains("ffmpeg"))
+                n.contains(".sw.") || n.contains("ffmpeg") || n.contains("software"))
     }
 }

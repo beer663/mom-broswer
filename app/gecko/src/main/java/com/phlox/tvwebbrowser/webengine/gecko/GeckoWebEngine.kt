@@ -145,8 +145,11 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         private fun disableSoftwareAv1() {
             try {
                 if (com.phlox.tvwebbrowser.utils.HardwareCodecs.hasHardwareDecoder(
-                        com.phlox.tvwebbrowser.utils.HardwareCodecs.AV1)) return
-                Log.i(TAG, "No hardware AV1 decoder: AV1 is off")
+                        com.phlox.tvwebbrowser.utils.HardwareCodecs.AV1)) {
+                    Log.i(TAG, "Hardware AV1 decoder detected; leaving AV1 enabled")
+                    return
+                }
+                Log.i(TAG, "No usable hardware AV1 decoder; attempting to disable software AV1")
                 val controller = Class.forName("org.mozilla.geckoview.GeckoPreferenceController")
                 val branch = controller.getField("PREF_BRANCH_DEFAULT").getInt(null)
                 val method = controller.methods.firstOrNull {
@@ -159,6 +162,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                     return
                 }
                 method.invoke(null, "media.av1.enabled", false, branch)
+                Log.i(TAG, "AV1 preference update requested")
             } catch (e: Throwable) {
                 Log.w(TAG, "Can not turn AV1 off", e)
             }
