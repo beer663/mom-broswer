@@ -147,7 +147,8 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 val branch = controller.getField("PREF_BRANCH_DEFAULT").getInt(null)
                 val method = controller.methods.firstOrNull {
                     it.name == "setGeckoPref" && it.parameterTypes.size == 3 &&
-                        it.parameterTypes[1] == Boolean::class.javaObjectType
+                        (it.parameterTypes[1] == Boolean::class.javaPrimitiveType ||
+                         it.parameterTypes[1] == Boolean::class.javaObjectType)
                 }
                 if (method == null) {
                     Log.w(TAG, "GeckoPreferenceController.setGeckoPref not found: AV1 stays on")

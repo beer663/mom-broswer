@@ -32,18 +32,16 @@ import org.mozilla.geckoview.GeckoView;
 import org.mozilla.geckoview.WebExtension;
 import java.net.URLEncoder;
 import java.util.ArrayList;
-import java.util.Locale;
 
 public class MainActivity extends Activity {
     private static GeckoRuntime runtime;
     private GeckoSession session;
     private GeckoView geckoView;
     private EditText address;
-    private TextView zoomLabel;
     private FrameLayout root;
     private LinearLayout navigationPanel, homePanel;
     private HorizontalScrollView controlsScroller;
-    private float textZoom = 1.0f, pointerX, pointerY;
+    private float pointerX, pointerY;
     private WebExtension uBlock;
     private SharedPreferences data;
     private boolean navigationVisible = true, pointerMode = false;
@@ -121,11 +119,6 @@ public class MainActivity extends Activity {
         addControl(controls,"Bookmark",v -> saveBookmark());
         addControl(controls,"Bookmarks",v -> showBookmarks());
         addControl(controls,"History",v -> showHistory());
-        addControl(controls,"−",v -> changeZoom(-0.1f));
-        zoomLabel = text("100%",14,Color.WHITE,true);
-        zoomLabel.setGravity(Gravity.CENTER);
-        controls.addView(zoomLabel,new LinearLayout.LayoutParams(dp(48),dp(42)));
-        addControl(controls,"+",v -> changeZoom(0.1f));
         addControl(controls,"Mouse: OFF",v -> togglePointerMode());
         addControl(controls,"uBlock",v -> openUBlockSettings());
         addControl(controls,"Menu",v -> showMoreOptions());
@@ -276,13 +269,6 @@ public class MainActivity extends Activity {
         StringBuilder b=new StringBuilder();
         for(String s:a) b.append(s.replace("\\n","")).append('\n');
         data.edit().putString(key,b.toString()).apply();
-    }
-
-    private void changeZoom(float delta) {
-        textZoom=Math.max(0.6f,Math.min(2.0f,textZoom+delta));
-        runtime.getSettings().setFontSizeFactor(textZoom);
-        zoomLabel.setText(String.format(Locale.US,"%d%%",Math.round(textZoom*100)));
-        if(session!=null) session.reload();
     }
 
     private void installBundledUBlock() {
