@@ -597,8 +597,9 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         webView.setSession(session)
 
         if (session.isOpen && previousSession != null && previousSession != session) {
+            // Resume the existing page without forcing a network reload.
+            // Reloading here restarts video streams and causes visible stutter on tab switches.
             session.setActive(true)
-            session.reload()
         }
     }
 
