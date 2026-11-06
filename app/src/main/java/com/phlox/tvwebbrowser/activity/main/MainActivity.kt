@@ -1109,16 +1109,12 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
 
     private inner class WebEngineCallback(val tab: WebTabState) : WebEngineWindowProviderCallback {
         override fun onNativeStreamDetected(url: String, origin: String) {
-            if (nativeStreamActive || tabsModel.currentTab.value !== tab) return
-            if (!isDirectNativeStream(url) || nativeStreamFailures.contains(url)) return
-            val page = tab.url
-            if (!page.startsWith("http://") && !page.startsWith("https://")) return
-            // Ignore playlists from the homepage, unrelated tabs and background requests.
-            if (page.contains("/appcontent/home/")) return
-            val now = android.os.SystemClock.elapsedRealtime()
-            if (now - nativeStreamLaunchAt < 10000L) return
-            nativeStreamLaunchAt = now
-            openNativeStream(url, origin)
+            // Embedded HLS/DASH playlists belong to the site's own video player.
+            // Do not launch fullscreen NativeStreamActivity for those requests:
+            // the user must be able to change servers and use the existing
+            // in-page Unmute and Full screen controls (generic/content.js).
+            // Direct .m3u8/.mpd URLs still use Media3 from navigate(url).
+            Log.d(TAG, "Embedded media detected; leaving video inline in webpage")
         }
 
         override fun getActivity(): Activity {
