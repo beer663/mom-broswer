@@ -404,10 +404,17 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
      */
     private fun loadHomePageWhenExtensionReady(token: Int, attempt: Int = 0) {
         if (token != homeLoadToken) return // something else was loaded meanwhile
-        if (extensionBackgroundReady || attempt >= 25) {
+        if (extensionBackgroundReady) {
             uiHandler.postDelayed({
-                if (token == homeLoadToken && session.isOpen) session.loadUri(Config.HOME_PAGE_URL)
-            }, if (extensionBackgroundReady) 150L else 0L)
+                if (token == homeLoadToken && session.isOpen && extensionBackgroundReady) {
+                    session.loadUri(Config.HOME_PAGE_URL)
+                }
+            }, 150L)
+        } else if (attempt >= 25) {
+            // Diagnostic safety guard: do not load the extension-backed homepage
+            // before its extension has initialized. This avoids forcing a load
+            // after five seconds when startup has already failed or stalled.
+            Log.e(TAG, "Homepage extension not ready after 5 seconds; skipping forced load")
         } else {
             uiHandler.postDelayed({ loadHomePageWhenExtensionReady(token, attempt + 1) }, 200)
         }
