@@ -274,7 +274,7 @@ public class MainActivity extends Activity {
 
     private void writeList(String key,ArrayList<String> a) {
         StringBuilder b=new StringBuilder();
-        for(String s:a) b.append(s.replace("\\n","")).append('\\n');
+        for(String s:a) b.append(s.replace("\\n","")).append('\n');
         data.edit().putString(key,b.toString()).apply();
     }
 
