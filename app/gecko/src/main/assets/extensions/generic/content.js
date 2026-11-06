@@ -136,19 +136,19 @@ let tvbroUnmuteButton = null;
 function tvbroCreateVideoControls() {
     if (tvbroVideoControlsHost || !document.documentElement) return;
 
-    // One overlay keeps the two controls on the same horizontal line. It is placed at the top edge of the
-    // video box (see tvbroUpdateVideoControls), Unmute on the left and Full screen on the right.
+    // One control occupies the top-left of the visible video box.
+    // Unmute is replaced in-place by Fullscreen, avoiding remote cursor movement.
     tvbroVideoControlsHost = document.createElement("div");
     tvbroVideoControlsHost.id = "tvbro-video-controls";
     tvbroVideoControlsHost.style.cssText =
-        "position:fixed;top:0;left:0;width:250px;z-index:2147483647;" +
+        "position:fixed;top:0;left:0;width:124px;z-index:2147483647;" +
         "display:none;pointer-events:none;";
 
     const shadow = tvbroVideoControlsHost.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
     style.textContent = `
         .controls {
-            display:flex;align-items:center;justify-content:space-between;
+            display:flex;align-items:center;justify-content:flex-start;
             width:100%;pointer-events:none;
         }
         button {
@@ -177,7 +177,7 @@ function tvbroCreateVideoControls() {
     const controls = document.createElement("div");
     controls.className = "controls";
 
-    // Left control: unmute the largest visible video in this document/frame.
+    // First control: unmute the largest visible video in this document/frame.
     tvbroUnmuteButton = document.createElement("button");
     tvbroUnmuteButton.type = "button";
     tvbroUnmuteButton.setAttribute("aria-label", "Unmute video");
@@ -186,7 +186,7 @@ function tvbroCreateVideoControls() {
         '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M15.5 8.5a5 5 0 0 1 0 7l1.4 1.4a7 7 0 0 0 0-9.8l-1.4 1.4zM18.3 5.7a9 9 0 0 1 0 12.6l1.4 1.4a11 11 0 0 0 0-15.4l-1.4 1.4z"/></svg><span>Unmute</span>';
     tvbroUnmuteButton.addEventListener("click", () => tvbroActivate("unmute"), true);
 
-    // Right control: request fullscreen directly from this trusted page click.
+    // Replacement control: request fullscreen directly from this trusted page click.
     tvbroFullscreenButton = document.createElement("button");
     tvbroFullscreenButton.type = "button";
     tvbroFullscreenButton.setAttribute("aria-label", "Make video full screen");
@@ -225,13 +225,13 @@ function tvbroUpdateVideoControlsUnsafe() {
         // top edge of the video box (the part that is on screen), a little inside
         tvbroVideoControlsHost.style.top = (candidate.top + 8) + "px";
         tvbroVideoControlsHost.style.left = (candidate.left + 8) + "px";
-        tvbroVideoControlsHost.style.width = Math.max(candidate.right - candidate.left - 16, 250) + "px";
+        tvbroVideoControlsHost.style.width = "124px";
     }
     if (tvbroUnmuteButton) {
         tvbroUnmuteButton.hidden = !hasVideo || !tvbroVideoIsMuted(video);
     }
     if (tvbroFullscreenButton) {
-        tvbroFullscreenButton.hidden = !hasVideo || fullscreen;
+        tvbroFullscreenButton.hidden = !hasVideo || fullscreen || tvbroVideoIsMuted(video);
     }
 }
 
