@@ -103,6 +103,7 @@ android {
 dependencies {
     implementation(project(":app:common"))
     "geckoIncludedImplementation"(project(":app:gecko"))
+    "geckoIncludedImplementation"(libs.geckoview)
 
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
 
