@@ -605,20 +605,15 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
             webView.releaseSession()
         }
 
-        // Only cover when attaching a different session. Reattaching the same
-        // session does not navigate or need a new first-paint placeholder.
-        // This avoids an unnecessary cover over already-rendered video.
-        if (previousSession != session) {
-            val isNightMode = (callback.getActivity().resources.configuration.uiMode and
-                    Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-            webView.coverUntilFirstPaint(if (isNightMode) 0xFF1B1B1B.toInt() else 0xFFE4E2DD.toInt())
-        }
+        // Restore the pre-Phase-3 first-paint cover on every attachment.
+        val isNightMode = (callback.getActivity().resources.configuration.uiMode and
+                Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        webView.coverUntilFirstPaint(if (isNightMode) 0xFF1B1B1B.toInt() else 0xFFE4E2DD.toInt())
         webView.setSession(session)
 
         if (session.isOpen && previousSession != null && previousSession != session) {
-            // Resume the existing page without forcing a network reload.
-            // Reloading here restarts video streams and causes visible stutter on tab switches.
             session.setActive(true)
+            session.reload()
         }
     }
 
