@@ -122,7 +122,11 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                     appWebExtension.value = extension
                     AppContext.provideConfig().appWebExtensionVersion =
                         APP_WEB_EXTENSION_VERSION
-                }) { }
+                }) { error ->
+                    // Upstream TV Bro 3.x reports extension initialization failures.
+                    // Keep the existing extension and homepage behavior unchanged.
+                    Log.e(TAG, "Unable to initialize bundled browser extension", error)
+                }
             }
 
             val webView = GeckoViewWithVirtualCursor(context)
@@ -590,10 +594,14 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
             webView.releaseSession()
         }
 
-        // Cover shown until the page paints: dark in dark mode, soft off-white otherwise (was bright white)
-        val isNightMode = (callback.getActivity().resources.configuration.uiMode and
-                Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        webView.coverUntilFirstPaint(if (isNightMode) 0xFF1B1B1B.toInt() else 0xFFE4E2DD.toInt())
+        // Only cover when attaching a different session. Reattaching the same
+        // session does not navigate or need a new first-paint placeholder.
+        // This avoids an unnecessary cover over already-rendered video.
+        if (previousSession != session) {
+            val isNightMode = (callback.getActivity().resources.configuration.uiMode and
+                    Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+            webView.coverUntilFirstPaint(if (isNightMode) 0xFF1B1B1B.toInt() else 0xFFE4E2DD.toInt())
+        }
         webView.setSession(session)
 
         if (session.isOpen && previousSession != null && previousSession != session) {
