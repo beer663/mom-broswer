@@ -30,10 +30,17 @@ open class GeckoViewEx @JvmOverloads constructor(context: Context, attrs: Attrib
     @Suppress("INACCESSIBLE_TYPE")
     private fun screenshotBuilderAccessHack() {
         val display: Any = mDisplay
-        // Access mDisplay field by reflection
-        val geckoDisplayField = display.javaClass.getDeclaredField("mDisplay")
-        geckoDisplayField.isAccessible = true
-        geckoDisplay = geckoDisplayField.get(display) as GeckoDisplay?
+        // GeckoView internals vary by version. Screenshot support is optional:
+        // failure must not crash browsing or interrupt a playing video.
+        geckoDisplay = try {
+            val field = display.javaClass.getDeclaredField("mDisplay")
+            field.isAccessible = true
+            field.get(display) as? GeckoDisplay
+        } catch (_: ReflectiveOperationException) {
+            null
+        } catch (_: SecurityException) {
+            null
+        }
     }
 
     fun screenshot(): ScreenshotBuilder? {
@@ -44,15 +51,17 @@ open class GeckoViewEx @JvmOverloads constructor(context: Context, attrs: Attrib
     }
 
     suspend fun renderThumbnail(bitmap: Bitmap?): Bitmap? {
+        // Do not request screenshots from a detached or zero-size video surface.
+        if (!isAttachedToWindow || width <= 0 || height <= 0) return null
         val screenshotBuilder = screenshot() ?: return null
         var thumbnail = bitmap
 
         if (thumbnail == null) {
             try {
-                thumbnail = Bitmap.createBitmap(width / 2, height / 2, Bitmap.Config.ARGB_8888)
+                thumbnail = Bitmap.createBitmap(maxOf(1, width / 2), maxOf(1, height / 2), Bitmap.Config.RGB_565)
             } catch (_: Throwable) {
                 try {
-                    thumbnail = Bitmap.createBitmap(width / 4, height / 4, Bitmap.Config.ARGB_8888)
+                    thumbnail = Bitmap.createBitmap(maxOf(1, width / 4), maxOf(1, height / 4), Bitmap.Config.RGB_565)
                 } catch (_: OutOfMemoryError) {
                     // Thumbnail could not be created.
                 }
