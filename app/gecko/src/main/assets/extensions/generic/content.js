@@ -19,19 +19,31 @@ communicatePort.onMessage.addListener(message => {
 // These controls live in the page so clicks are genuine DOM user gestures.
 // Gecko requires user activation for requestFullscreen; an Android-side
 // evaluateJavascript call does not reliably preserve that activation.
-function tvbroBestVideo() {
+// The best video of this frame: the biggest one that is (partly) on screen, a playing one preferred.
+// Returns { video, score, left, top, right, bottom } (the visible part, in this frame's viewport) or null.
+function tvbroVideoCandidate() {
     let best = null;
-    let bestScore = 0;
     document.querySelectorAll("video").forEach(v => {
         const r = v.getBoundingClientRect();
-        let score = r.width * r.height;
-        if (r.width < 160 || r.height < 90) return;
-        if (r.bottom <= 0 || r.right <= 0 || r.top >= window.innerHeight || r.left >= window.innerWidth) return;
+        if (r.width < 160 || r.height < 90) return; // ignore tiny / hidden videos
+        const left = Math.max(r.left, 0);
+        const top = Math.max(r.top, 0);
+        const right = Math.min(r.right, window.innerWidth);
+        const bottom = Math.min(r.bottom, window.innerHeight);
+        if (right - left < 20 || bottom - top < 20) return; // not on screen
+        let score = (right - left) * (bottom - top);
         const playing = !v.paused && !v.ended && v.readyState > 2;
         if (!playing) score = score / 10;
-        if (score > bestScore) { best = v; bestScore = score; }
+        if (!best || score > best.score) {
+            best = { video: v, score: score, left: left, top: top, right: right, bottom: bottom };
+        }
     });
     return best;
+}
+
+function tvbroBestVideo() {
+    const c = tvbroVideoCandidate();
+    return c ? c.video : null;
 }
 
 function tvbroVideoIsMuted(video) {
@@ -191,6 +203,14 @@ function tvbroCreateVideoControls() {
 }
 
 function tvbroUpdateVideoControls() {
+    try {
+        tvbroUpdateVideoControlsUnsafe();
+    } catch (e) {
+        console.log("TV Bro: controls update failed:", e);
+    }
+}
+
+function tvbroUpdateVideoControlsUnsafe() {
     if (!tvbroVideoControlsHost) tvbroCreateVideoControls();
     if (!tvbroVideoControlsHost) return;
 
@@ -316,11 +336,15 @@ const TVBRO_PLAY_OVERLAY_SELECTORS = [
     ".jw-display-icon-container", ".jw-icon-display",               // JW Player
     ".plyr__control--overlaid",                                     // Plyr
     ".ytp-large-play-button",                                       // YouTube
-    "[class*='big-play']", "[class*='bigplay']", "[class*='play-button']", "[class*='playbutton']",
-    "[class*='play-btn']", "[aria-label='Play']", "[title='Play']"
+    "[class*='big-play']", "[class*='bigplay']",
+    "button[class*='play-button']", "div[class*='play-button']", "button[class*='play-btn']",
+    "button[aria-label='Play']", "button[title='Play']"
 ].join(",");
 
+let tvbroOverlayClicksTotal = 0; // per frame: never keep pressing things on a page
+
 function tvbroClickPlayOverlay(video) {
+    if (tvbroOverlayClicksTotal >= 4) return false;
     let container = video.parentElement;
     for (let depth = 0; container && depth < 6; depth++, container = container.parentElement) {
         let found;
@@ -328,6 +352,8 @@ function tvbroClickPlayOverlay(video) {
         for (const el of found) {
             const r = el.getBoundingClientRect();
             if (r.width === 0 || r.height === 0) continue;
+            if (el.closest("a[href]")) continue; // a link would navigate away
+            tvbroOverlayClicksTotal++;
             el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
             return true;
         }
@@ -365,18 +391,31 @@ function tvbroTryAutoplay(video) {
 
 const tvbroVideoObserver = ("IntersectionObserver" in window)
     ? new IntersectionObserver(entries => {
-        entries.forEach(en => { if (en.isIntersecting) tvbroTryAutoplay(en.target); });
+        if (entries.some(en => en.isIntersecting)) tvbroAutoplayScan();
     }, { threshold: 0 })
     : null;
 
+// Starting every video of a page at once (feeds, previews, ads) overloads weak devices: autoplay only the
+// biggest one that is on screen in this frame, and nothing while a video of this frame is already playing.
 function tvbroAutoplayScan() {
-    document.querySelectorAll("video").forEach(v => {
+    const videos = document.querySelectorAll("video");
+    let playing = false;
+    let best = null;
+    let bestArea = 0;
+    videos.forEach(v => {
         if (!tvbroObservedVideos.has(v)) {
             tvbroObservedVideos.add(v);
             if (tvbroVideoObserver) tvbroVideoObserver.observe(v);
         }
-        if (tvbroAutoplayEnabled && tvbroVideoOnScreen(v)) tvbroTryAutoplay(v);
+        if (!v.paused && !v.ended) { playing = true; return; }
+        if (!tvbroVideoOnScreen(v)) return;
+        const info = tvbroAutoplayInfo.get(v);
+        if (info && (info.userPaused || info.attempts >= 6)) return;
+        const r = v.getBoundingClientRect();
+        const area = r.width * r.height;
+        if (area > bestArea) { best = v; bestArea = area; }
     });
+    if (tvbroAutoplayEnabled && !playing && best) tvbroTryAutoplay(best);
 }
 
 // a video that was playing and then paused (not because it ended) was paused on purpose: leave it alone
@@ -396,7 +435,7 @@ document.addEventListener("loadstart", e => {
 }, true);
 ["loadedmetadata", "loadeddata", "durationchange", "canplay"].forEach(name =>
     document.addEventListener(name, e => {
-        if (e.target && e.target.tagName === "VIDEO" && tvbroVideoOnScreen(e.target)) tvbroTryAutoplay(e.target);
+        if (e.target && e.target.tagName === "VIDEO") tvbroAutoplayScan();
     }, true));
 
 
@@ -416,6 +455,6 @@ new MutationObserver(mutations => {
     mutations.forEach(m => m.addedNodes.forEach(n => {
         if (n.nodeType !== 1) return;
         if (n.tagName === "IFRAME") tvbroAllowIframe(n);
-        else if (n.querySelectorAll) n.querySelectorAll("iframe").forEach(tvbroAllowIframe);
+        else if (n.getElementsByTagName) Array.prototype.forEach.call(n.getElementsByTagName("iframe"), tvbroAllowIframe);
     }));
 }).observe(document, { childList: true, subtree: true });

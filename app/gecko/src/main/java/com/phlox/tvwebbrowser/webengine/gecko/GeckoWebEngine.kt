@@ -56,7 +56,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
     companion object {
         const val ENGINE_NAME = "GeckoView"
-        private const val APP_WEB_EXTENSION_VERSION = 59
+        private const val APP_WEB_EXTENSION_VERSION = 60
         private const val ADGUARD_DNS_URL = "https://dns.adguard-dns.com/dns-query"
 
         val TAG: String = GeckoWebEngine::class.java.simpleName
@@ -64,6 +64,9 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         var appWebExtension = ObservableValue<WebExtension?>(null)
         // true once the extension's background script is running (it swaps in the bundled home page)
         @Volatile var extensionBackgroundReady = false
+        // the callback of the tab that is on screen; the background script's ad checks use it (see
+        // AppWebExtensionBackgroundPortDelegate), whichever tab created that port
+        @Volatile var activeCallback: WebEngineWindowProviderCallback? = null
         var weakRefToSingleGeckoView: WeakReference<GeckoViewWithVirtualCursor?> =
             WeakReference(null)
         val uiHandler = Handler(Looper.getMainLooper())
@@ -99,6 +102,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 )
 
                 runtime = GeckoRuntime.create(context, builder.build())
+                disableSoftwareAv1()
 
                 val webExtInstallResult =
                     if (APP_WEB_EXTENSION_VERSION ==
@@ -126,6 +130,33 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
             weakRefToSingleGeckoView = WeakReference(webView)
             webViewContainer.setWillNotDraw(true)
             // Use it only as a container; cursor will be drawn on the WebView itself.
+        }
+
+        /**
+         * Without a hardware AV1 decoder GeckoView decodes AV1 in software (dav1d), which TV chips can not do
+         * smoothly, and sites still choose it (YouTube serves AV1 to Firefox): pages are told there is no AV1,
+         * so they choose VP9 or H.264, which the hardware decodes. (Same fix as upstream TV Bro; the preference
+         * is set through reflection so an older GeckoView without this API only logs a warning.)
+         */
+        private fun disableSoftwareAv1() {
+            try {
+                if (com.phlox.tvwebbrowser.utils.HardwareCodecs.hasHardwareDecoder(
+                        com.phlox.tvwebbrowser.utils.HardwareCodecs.AV1)) return
+                Log.i(TAG, "No hardware AV1 decoder: AV1 is off")
+                val controller = Class.forName("org.mozilla.geckoview.GeckoPreferenceController")
+                val branch = controller.getField("PREF_BRANCH_DEFAULT").getInt(null)
+                val method = controller.methods.firstOrNull {
+                    it.name == "setGeckoPref" && it.parameterTypes.size == 3 &&
+                        it.parameterTypes[1] == Boolean::class.javaObjectType
+                }
+                if (method == null) {
+                    Log.w(TAG, "GeckoPreferenceController.setGeckoPref not found: AV1 stays on")
+                    return
+                }
+                method.invoke(null, "media.av1.enabled", false, branch)
+            } catch (e: Throwable) {
+                Log.w(TAG, "Can not turn AV1 off", e)
+            }
         }
 
         fun onThemeSettingUpdated(theme: Config.Theme) {
@@ -366,7 +397,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         if (token != homeLoadToken) return // something else was loaded meanwhile
         if (extensionBackgroundReady || attempt >= 25) {
             uiHandler.postDelayed({
-                if (token == homeLoadToken) session.loadUri(Config.HOME_PAGE_URL)
+                if (token == homeLoadToken && session.isOpen) session.loadUri(Config.HOME_PAGE_URL)
             }, if (extensionBackgroundReady) 150L else 0L)
         } else {
             uiHandler.postDelayed({ loadHomePageWhenExtensionReady(token, attempt + 1) }, 200)
@@ -378,7 +409,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         if (token != homeLoadToken) return
         if (extensionBackgroundReady) {
             uiHandler.postDelayed({
-                if (token == homeLoadToken && isHomePageUrl(url)) {
+                if (token == homeLoadToken && session.isOpen && isHomePageUrl(url)) {
                     session.reload(GeckoSession.LOAD_FLAGS_BYPASS_CACHE)
                 }
             }, 600)
@@ -549,6 +580,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         parent: ViewGroup
     ) {
         this.callback = callback
+        activeCallback = callback
         val webView = this.webView ?: throw IllegalStateException("WebView is null")
         val previousSession = webView.session
 
@@ -570,6 +602,8 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     }
 
     override fun onDetachFromWindow(completely: Boolean, destroyTab: Boolean) {
+        val detachingCallback = callback
+        if (activeCallback === detachingCallback) activeCallback = null
         callback = null
         val webView = this.webView
 
@@ -586,6 +620,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         }
 
         if (destroyTab) {
+            homeLoadToken++ // cancels home page loads that are still waiting
             mediaSessionDelegate.mediaSession?.stop()
             session.close()
         }
