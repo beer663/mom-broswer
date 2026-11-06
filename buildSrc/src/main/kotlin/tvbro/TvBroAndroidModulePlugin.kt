@@ -29,14 +29,22 @@ internal object TvBroAndroidModulePlugin {
 
             when (type) {
                 AndroidModuleType.APPLICATION -> extensions.configure<ApplicationExtension> {
-                    compileSdk = findVersion("android-compileSdk")
+                    compileSdk {
+                        version = release(findVersion("android-compileSdk")) {
+                            minorApiLevel = 1
+                        }
+                    }
                     defaultConfig {
                         minSdk = findVersion("android-minSdk")
                         targetSdk = findVersion("android-targetSdk")
                     }
                 }
                 AndroidModuleType.LIBRARY -> extensions.configure<LibraryExtension> {
-                    compileSdk = findVersion("android-compileSdk")
+                    compileSdk {
+                        version = release(findVersion("android-compileSdk")) {
+                            minorApiLevel = 1
+                        }
+                    }
                     defaultConfig {
                         minSdk = findVersion("android-minSdk")
                         consumerProguardFiles("consumer-rules.pro")
