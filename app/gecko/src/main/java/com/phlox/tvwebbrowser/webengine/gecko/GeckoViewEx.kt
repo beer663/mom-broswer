@@ -1,4 +1,3 @@
-
 package com.phlox.tvwebbrowser.webengine.gecko
 
 import android.content.Context
@@ -16,6 +15,11 @@ open class GeckoViewEx @JvmOverloads constructor(context: Context, attrs: Attrib
     GeckoView(context, attrs) {
 
     private var geckoDisplay: GeckoDisplay? = null
+
+    companion object {
+        // Set to false to turn thumbnail screenshots off completely (diagnostic switch).
+        private const val THUMBNAILS_ENABLED = true
+    }
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
@@ -52,16 +56,17 @@ open class GeckoViewEx @JvmOverloads constructor(context: Context, attrs: Attrib
 
     suspend fun renderThumbnail(bitmap: Bitmap?): Bitmap? {
         // Do not request screenshots from a detached or zero-size video surface.
+        if (!THUMBNAILS_ENABLED) return null
         if (!isAttachedToWindow || width <= 0 || height <= 0) return null
         val screenshotBuilder = screenshot() ?: return null
         var thumbnail = bitmap
 
         if (thumbnail == null) {
             try {
-                thumbnail = Bitmap.createBitmap(maxOf(1, width / 2), maxOf(1, height / 2), Bitmap.Config.RGB_565)
+                thumbnail = Bitmap.createBitmap(maxOf(1, width / 2), maxOf(1, height / 2), Bitmap.Config.ARGB_8888)
             } catch (_: Throwable) {
                 try {
-                    thumbnail = Bitmap.createBitmap(maxOf(1, width / 4), maxOf(1, height / 4), Bitmap.Config.RGB_565)
+                    thumbnail = Bitmap.createBitmap(maxOf(1, width / 4), maxOf(1, height / 4), Bitmap.Config.ARGB_8888)
                 } catch (_: OutOfMemoryError) {
                     // Thumbnail could not be created.
                 }
