@@ -101,6 +101,11 @@ android {
 }
 
 dependencies {
+    // Phase 7: optional native HLS / DASH player; GeckoView remains the browser engine.
+    implementation("androidx.media3:media3-exoplayer:1.5.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
+    implementation("androidx.media3:media3-exoplayer-dash:1.5.1")
+    implementation("androidx.media3:media3-ui:1.5.1")
     implementation(project(":app:common"))
     "geckoIncludedImplementation"(project(":app:gecko"))
     "geckoIncludedImplementation"(libs.geckoview)

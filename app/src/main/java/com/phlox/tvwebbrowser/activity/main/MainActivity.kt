@@ -734,8 +734,24 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
             .show()
     }
 
+    private fun isDirectNativeStream(url: String): Boolean {
+        val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return false
+        if (uri.scheme != "https" && uri.scheme != "http") return false
+        val path = uri.path?.lowercase(Locale.ROOT) ?: return false
+        return path.endsWith(".m3u8") || path.endsWith(".mpd")
+    }
+
+    private fun openNativeStream(url: String) {
+        startActivity(Intent(this, com.phlox.tvwebbrowser.activity.player.NativeStreamActivity::class.java)
+            .putExtra(com.phlox.tvwebbrowser.activity.player.NativeStreamActivity.EXTRA_URL, url))
+    }
+
     fun navigate(url: String) {
         Log.d(TAG, "navigate: $url")
+        if (isDirectNativeStream(url)) {
+            openNativeStream(url)
+            return
+        }
         vb.vActionBar.setAddressBoxTextColor(ContextCompat.getColor(this@MainActivity, R.color.default_url_color))
         val tab = tabsModel.currentTab.value
         if (tab != null) {
