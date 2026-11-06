@@ -60,7 +60,7 @@ class MyContentDelegate(private val webEngine: GeckoWebEngine) :
             element.srcUri,
             element.title,
             element.altText,
-            null, // GeckoView 157 no longer exposes ContextElement.textContent
+            element.textContent,
             webView.cursorDrawerDelegate.cursorPosition.x.toInt(),
             webView.cursorDrawerDelegate.cursorPosition.y.toInt()
         )
@@ -162,4 +162,11 @@ class MyContentDelegate(private val webEngine: GeckoWebEngine) :
         super.onShowDynamicToolbar(geckoSession)
     }
 
+    override fun onCookieBannerDetected(session: GeckoSession) {
+        super.onCookieBannerDetected(session)
+    }
+
+    override fun onCookieBannerHandled(session: GeckoSession) {
+        super.onCookieBannerHandled(session)
+    }
 }
