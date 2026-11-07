@@ -942,6 +942,15 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
                 //Log.d(TAG, "dispatchKeyEvent event: $event")
                 backNavigationEventsAdapter.dispatchKeyEvent(event)
 
+                // Give a focused URL field first chance at Enter/Search and keyboard
+                // navigation. The menu cursor otherwise turns the IME's submit key
+                // into a synthetic pointer click, leaving the address unsubmitted.
+                // This also handles Android TV keyboards that do not report the IME
+                // through WindowInsetsCompat on older Android versions.
+                if (vb.rlActionBar.isVisible && vb.vActionBar.isAddressInputFocused()) {
+                    return localCallback.dispatchKeyEvent(event)
+                }
+
                 // The webpage's virtual cursor belongs to GeckoView and cannot click
                 // Android toolbar buttons. While the menu is open, feed remote input
                 // to a separate, topmost cursor that dispatches touches to the menu.
@@ -968,6 +977,11 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
                 //Log.d(TAG, "dispatchGenericMotionEvent event: $event")
                 if (backNavigationEventsAdapter.dispatchGenericMotionEvent(event)) {
                     return true
+                }
+                // Do not translate remote/keyboard input into pointer motion
+                // while the native address field is being edited.
+                if (vb.rlActionBar.isVisible && vb.vActionBar.isAddressInputFocused()) {
+                    return localCallback.dispatchGenericMotionEvent(event)
                 }
                 if (vb.rlActionBar.isVisible &&
                     menuCursorOverlay?.dispatchGenericMotionEvent(event) == true) {

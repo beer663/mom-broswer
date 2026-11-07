@@ -10,6 +10,7 @@ import android.view.View.OnKeyListener
 import android.view.animation.Animation
 import android.view.animation.AnimationUtils
 import android.view.inputmethod.InputMethodManager
+import android.view.inputmethod.EditorInfo
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import androidx.appcompat.app.AppCompatActivity
@@ -59,20 +60,50 @@ class ActionBar @JvmOverloads constructor(
         }
     }
 
-    private val etUrlKeyListener = OnKeyListener { view, i, keyEvent ->
+    private var lastUrlSubmitAt = 0L
+
+    // Both a remote Enter key and the Android TV software keyboard's Search/Go
+    // action must navigate. The IME often delivers an editor action without a
+    // physical KeyEvent, so a key listener alone is not sufficient.
+    private fun submitAddress(): Boolean {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastUrlSubmitAt < 350L) return true // ignore duplicate IME + key events
+        lastUrlSubmitAt = now
+        val urlOrSearch = vb.etUrl.text.toString()
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(vb.etUrl.windowToken, 0)
+        callback?.search(urlOrSearch)
+        dismissExtendedAddressBarMode()
+        callback?.onUrlInputDone()
+        return true
+    }
+
+    private val etUrlKeyListener = OnKeyListener { _, _, keyEvent ->
         when (keyEvent.keyCode) {
-            KeyEvent.KEYCODE_ENTER -> {
-                if (keyEvent.action == KeyEvent.ACTION_UP) {
-                    val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-                    imm.hideSoftInputFromWindow(vb.etUrl.windowToken, 0)
-                    callback?.search(vb.etUrl.text.toString())
-                    dismissExtendedAddressBarMode()
-                    callback?.onUrlInputDone()
-                }
-                return@OnKeyListener true
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_SEARCH -> {
+                if (keyEvent.action == KeyEvent.ACTION_UP) submitAddress()
+                true
             }
+            else -> false
         }
-        false
+    }
+
+    private val etUrlEditorActionListener = android.widget.TextView.OnEditorActionListener { _, actionId, event ->
+        val isSubmitAction = actionId == EditorInfo.IME_ACTION_SEARCH ||
+            actionId == EditorInfo.IME_ACTION_GO ||
+            actionId == EditorInfo.IME_ACTION_DONE ||
+            (actionId == EditorInfo.IME_ACTION_UNSPECIFIED && event == null)
+        val isSubmitKey = event?.keyCode == KeyEvent.KEYCODE_ENTER ||
+            event?.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER ||
+            event?.keyCode == KeyEvent.KEYCODE_SEARCH
+        when {
+            isSubmitAction && (event == null || event.action == KeyEvent.ACTION_UP) -> submitAddress()
+            isSubmitKey && event?.action == KeyEvent.ACTION_UP -> submitAddress()
+            isSubmitAction || isSubmitKey -> true // swallow matching DOWN without submitting twice
+            else -> false
+        }
     }
 
     init {
@@ -105,6 +136,7 @@ class ActionBar @JvmOverloads constructor(
         vb.etUrl.onFocusChangeListener = etUrlFocusChangeListener
 
         vb.etUrl.setOnKeyListener(etUrlKeyListener)
+        vb.etUrl.setOnEditorActionListener(etUrlEditorActionListener)
 
 
         downloadsModel.activeDownloads.subscribe(context as AppCompatActivity) {
@@ -122,6 +154,9 @@ class ActionBar @JvmOverloads constructor(
             }
         }
     }
+
+    /** Let native input handle its own navigation and IME Search key. */
+    fun isAddressInputFocused(): Boolean = vb.etUrl.hasFocus()
 
     fun setAddressBoxText(text: String) {
         if (text == Config.HOME_PAGE_URL) {
