@@ -40,10 +40,8 @@ class MenuCursorLayout(
     private var forwardingTouchSequence = false
     private var pageTouchSequence = false
 
-    /** Only the bundled home page may receive clicks through an open browser menu. */
+    // Only enable click-through over the bundled homepage, never over other sites.
     var pageTapsEnabled: () -> Boolean = { false }
-
-    /** Called after the full synthetic tap reaches the underlying home page. */
     var onPageTap: () -> Unit = {}
 
     init {
@@ -98,10 +96,10 @@ class MenuCursorLayout(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                val hitsMenu = inside(toolbar, event.x, event.y) ||
+                val onMenu = inside(toolbar, event.x, event.y) ||
                     inside(bottomPanel, event.x, event.y)
-                pageTouchSequence = !hitsMenu && pageTapsEnabled()
-                forwardingTouchSequence = hitsMenu || pageTouchSequence
+                pageTouchSequence = !onMenu && pageTapsEnabled()
+                forwardingTouchSequence = onMenu || pageTouchSequence
             }
             MotionEvent.ACTION_CANCEL -> {
                 if (!forwardingTouchSequence) return true
@@ -109,8 +107,8 @@ class MenuCursorLayout(
         }
         if (!forwardingTouchSequence) return true
 
-        // Temporarily let the root skip this transparent overlay and deliver
-        // DOWN/UP to the actual Android button or the Home page's bookmark tile.
+        // Let the Android root deliver the complete touch gesture to the menu
+        // control, or (on Home only) the actual GeckoView bookmark tile.
         forwarding = true
         val handled = try {
             activityRoot.dispatchTouchEvent(event)
@@ -119,8 +117,8 @@ class MenuCursorLayout(
         }
         if (event.actionMasked == MotionEvent.ACTION_UP ||
             event.actionMasked == MotionEvent.ACTION_CANCEL) {
-            // Post the menu close AFTER touch dispatch so GeckoView gets ACTION_UP.
-            if (event.actionMasked == MotionEvent.ACTION_UP && pageTouchSequence) {
+            // Never close/detach the menu during an in-flight ACTION_UP.
+            if (event.actionMasked == MotionEvent.ACTION_UP && pageTouchSequence && handled) {
                 post { onPageTap() }
             }
             forwardingTouchSequence = false

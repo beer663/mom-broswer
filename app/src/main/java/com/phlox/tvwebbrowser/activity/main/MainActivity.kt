@@ -139,8 +139,8 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
 
     private var menuCursorOverlay: MenuCursorLayout? = null
 
-    /** True only for the bundled Home page, not for arbitrary websites. */
-    private fun isBundledHomeTab(tab: WebTabState?): Boolean {
+    // Allow bookmark tiles to receive cursor taps only on the bundled Home page.
+    private fun isBundledHomeForMenuClicks(tab: WebTabState?): Boolean {
         return config.homePageMode == Config.HomePageMode.HOME_PAGE && tab != null &&
             (tab.url == Config.HOME_URL_ALIAS ||
                 tab.url.substringBefore('#').substringBefore('?').trimEnd('/') ==
@@ -1055,9 +1055,9 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
             this, vb.rlRoot, vb.rlActionBar, vb.llBottomPanel
         ).also {
             menuCursorOverlay = it
-            // Only let the virtual cursor reach bundled-Home bookmark tiles;
-            // on normal websites, an open menu continues to block webpage taps.
-            it.pageTapsEnabled = { isBundledHomeTab(tabsModel.currentTab.value) }
+            // The transparent menu cursor must allow taps on visible Home bookmark tiles.
+            // Other websites keep the original menu click-blocking behavior.
+            it.pageTapsEnabled = { isBundledHomeForMenuClicks(tabsModel.currentTab.value) }
             it.onPageTap = {
                 if (vb.rlActionBar.isVisible || vb.llBottomPanel.isVisible) {
                     hideMenuOverlay()
