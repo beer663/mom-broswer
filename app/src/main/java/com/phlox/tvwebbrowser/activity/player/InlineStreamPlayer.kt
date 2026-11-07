@@ -1,5 +1,6 @@
 package com.phlox.tvwebbrowser.activity.player
 
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -9,6 +10,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -22,10 +24,12 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import com.phlox.tvwebbrowser.R
+import com.phlox.tvwebbrowser.widgets.cursor.CursorDrawerDelegate
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -66,6 +70,92 @@ class InlineStreamPlayer(
     private var oldUiFlags: Int? = null
     private var timeout: Runnable? = null
     private val startPending = Runnable { startIfPositioned() }
+
+    // The page's virtual cursor sends its clicks to GeckoView only, so it cannot press the
+    // Unmute / Full screen button. This hook lets the cursor click it WITHOUT the button
+    // taking keyboard focus (which used to make the cursor stop responding to the remote).
+    private var consumingCursorTouch = false
+
+    // The page's cursor is drawn on the web view, which is underneath this overlay, so it would
+    // vanish over the video. Draw it again on top of the player.
+    private var cursorDelegate: CursorDrawerDelegate? = null
+    private var lastCursorX = Float.NaN
+    private var lastCursorY = Float.NaN
+    private var lastCursorVisible = false
+
+    // The page may redraw 60 times/sec for an animated banner. Do not redraw
+    // Media3 on every page frame: only when the cursor actually changes.
+    private val cursorRedrawHook: (CursorDrawerDelegate) -> Unit = { delegate ->
+        val host = holder
+        if (host != null && host.isShown && ready && !menuVisible &&
+            delegate.surface === webView()) {
+            cursorDelegate = delegate
+            val x = delegate.cursorPosition.x
+            val y = delegate.cursorPosition.y
+            val visible = delegate.isCursorVisibleForOverlay()
+            if (x != lastCursorX || y != lastCursorY || visible != lastCursorVisible) {
+                lastCursorX = x
+                lastCursorY = y
+                lastCursorVisible = visible
+                host.postInvalidateOnAnimation()
+            }
+        }
+    }
+
+    private fun drawCursorOnPlayer(host: View, canvas: Canvas) {
+        val delegate = cursorDelegate ?: return
+        val hLoc = IntArray(2)
+        val wLoc = IntArray(2)
+        host.getLocationOnScreen(hLoc)
+        delegate.surface.getLocationOnScreen(wLoc)
+        val cx = wLoc[0] + delegate.cursorPosition.x - hLoc[0]
+        val cy = wLoc[1] + delegate.cursorPosition.y - hLoc[1]
+        if (cx < 0f || cy < 0f || cx > host.width || cy > host.height) return
+        delegate.drawCursorAt(canvas, cx, cy)
+    }
+
+    private fun cursorOverButton(web: View, x: Float, y: Float): Boolean {
+        val b = button ?: return false
+        val host = holder ?: return false
+        // Only the currently active webpage's cursor can control this button.
+        if (web !== webView() || !ready || menuVisible || !host.isShown || fullscreen ||
+            b.visibility != View.VISIBLE || b.width <= 0 || b.height <= 0) return false
+        val bLoc = IntArray(2)
+        val wLoc = IntArray(2)
+        b.getLocationOnScreen(bLoc)
+        web.getLocationOnScreen(wLoc)
+        val sx = wLoc[0] + x
+        val sy = wLoc[1] + y
+        return sx >= bLoc[0] && sx <= bLoc[0] + b.width && sy >= bLoc[1] && sy <= bLoc[1] + b.height
+    }
+
+    private val cursorInterceptor: (View, Float, Float, Int) -> Boolean = { web, x, y, action ->
+        // Never consume touches from another tab, Android menus, or a closed player.
+        if (web !== webView() || !ready || menuVisible || holder?.isShown != true) {
+            consumingCursorTouch = false
+            false
+        } else when (action) {
+            MotionEvent.ACTION_DOWN -> {
+                consumingCursorTouch = cursorOverButton(web, x, y)
+                consumingCursorTouch
+            }
+            MotionEvent.ACTION_MOVE -> consumingCursorTouch
+            MotionEvent.ACTION_UP -> {
+                val consumed = consumingCursorTouch
+                consumingCursorTouch = false
+                if (consumed && cursorOverButton(web, x, y)) {
+                    button?.let { b -> b.post { b.performClick() } }
+                }
+                consumed
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                val consumed = consumingCursorTouch
+                consumingCursorTouch = false
+                consumed
+            }
+            else -> false
+        }
+    }
 
     private fun dp(value: Int) = (value * activity.resources.displayMetrics.density + .5f).toInt()
     private fun isPlaylist(url: String): Boolean {
@@ -132,7 +222,12 @@ class InlineStreamPlayer(
         muted = true
         ready = false
 
-        val host = FrameLayout(activity).apply {
+        val host = object : FrameLayout(activity) {
+            override fun dispatchDraw(canvas: Canvas) {
+                super.dispatchDraw(canvas)
+                drawCursorOnPlayer(this, canvas)
+            }
+        }.apply {
             setBackgroundColor(Color.BLACK)
             elevation = dp(12).toFloat()
             isFocusable = false
@@ -154,7 +249,8 @@ class InlineStreamPlayer(
                 cornerRadius = dp(26).toFloat()
                 setStroke(dp(1), Color.rgb(216, 222, 232))
             }
-            isFocusable = true
+            isFocusable = false
+            isFocusableInTouchMode = false
             setOnClickListener {
                 if (muted) {
                     muted = false
@@ -188,9 +284,12 @@ class InlineStreamPlayer(
         }
         val http = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(headers).setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(15000).setReadTimeoutMs(15000)
         req.userAgent?.takeIf { it.isNotBlank() }?.let { http.setUserAgent(it) }
         val factory = DefaultMediaSourceFactory(DefaultDataSource.Factory(activity, http))
-        val p = ExoPlayer.Builder(activity).setMediaSourceFactory(factory).build()
+        // Decoder fallback lets Media3 try another decoder when a TV chip's first choice fails.
+        val renderers = DefaultRenderersFactory(activity).setEnableDecoderFallback(true)
+        val p = ExoPlayer.Builder(activity, renderers).setMediaSourceFactory(factory).build()
         exo = p
         video.player = p
         val mime = if (req.url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT).endsWith(".mpd"))
@@ -202,9 +301,13 @@ class InlineStreamPlayer(
                     ready = true
                     cancelTimeout()
                     host.visibility = if (menuVisible) View.INVISIBLE else View.VISIBLE
+                    // Install hooks only after video is ready. Before that we do not
+                    // intercept clicks or ask Android to draw a second cursor.
+                    CursorDrawerDelegate.touchInterceptor = cursorInterceptor
+                    CursorDrawerDelegate.overlayRedrawHook = cursorRedrawHook
                     activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     onActiveChanged(true)
-                    if (!menuVisible) control.requestFocus()
+                    // Do not take keyboard focus: that stops the remote moving the cursor.
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
@@ -278,6 +381,13 @@ class InlineStreamPlayer(
     fun setMenuVisible(visible: Boolean) {
         menuVisible = visible
         holder?.visibility = if (visible || !ready) View.INVISIBLE else View.VISIBLE
+        if (visible) {
+            consumingCursorTouch = false
+        } else {
+            // Draw the cursor again at the next page frame after returning.
+            lastCursorX = Float.NaN
+            lastCursorY = Float.NaN
+        }
         if (ready) exo?.playWhenReady = !visible
     }
 
@@ -290,6 +400,17 @@ class InlineStreamPlayer(
         fullscreen = false
         val wasReady = ready
         ready = false
+        consumingCursorTouch = false
+        cursorDelegate = null
+        lastCursorX = Float.NaN
+        lastCursorY = Float.NaN
+        lastCursorVisible = false
+        if (CursorDrawerDelegate.touchInterceptor === cursorInterceptor) {
+            CursorDrawerDelegate.touchInterceptor = null
+        }
+        if (CursorDrawerDelegate.overlayRedrawHook === cursorRedrawHook) {
+            CursorDrawerDelegate.overlayRedrawHook = null
+        }
         val video = playerView
         video?.player = null
         exo?.release()

@@ -1040,18 +1040,25 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
 
     /** Show the TV remote cursor over Android menu widgets, not behind them in GeckoView. */
     private fun showMenuCursor() {
-        if (menuCursorOverlay != null) return
-        val overlay = MenuCursorLayout(this, vb.rlRoot, vb.rlActionBar, vb.llBottomPanel)
-        menuCursorOverlay = overlay
-        // The toolbar and inline player have elevation; draw the pointer above both.
-        overlay.elevation = 24f * resources.displayMetrics.density
-        vb.rlRoot.addView(overlay, RelativeLayout.LayoutParams(
-            RelativeLayout.LayoutParams.MATCH_PARENT,
-            RelativeLayout.LayoutParams.MATCH_PARENT
-        ))
+        // Reuse the menu cursor rather than allocating a new full-screen view,
+        // gesture adapter and cursor animation every time Back opens the menu.
+        val previouslyVisible = menuCursorOverlay?.visibility == View.VISIBLE
+        val overlay = menuCursorOverlay ?: MenuCursorLayout(
+            this, vb.rlRoot, vb.rlActionBar, vb.llBottomPanel
+        ).also {
+            menuCursorOverlay = it
+            // Toolbar and inline Media3 can have elevation: keep the pointer above both.
+            it.elevation = 24f * resources.displayMetrics.density
+            vb.rlRoot.addView(it, RelativeLayout.LayoutParams(
+                RelativeLayout.LayoutParams.MATCH_PARENT,
+                RelativeLayout.LayoutParams.MATCH_PARENT
+            ))
+        }
+        if (previouslyVisible) return
+        overlay.visibility = View.VISIBLE
         overlay.bringToFront()
         overlay.post {
-            if (menuCursorOverlay !== overlay) return@post
+            if (menuCursorOverlay !== overlay || overlay.visibility != View.VISIBLE) return@post
             // Preserve the pointer position when crossing from webpage to menu.
             val previous = tabsModel.currentTab.value?.webEngine?.getCursorDrawerDelegate()
             if (previous != null) {
@@ -1074,7 +1081,7 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
 
     private fun hideMenuCursor() {
         val overlay = menuCursorOverlay ?: return
-        menuCursorOverlay = null
+        if (overlay.visibility != View.VISIBLE) return
         // Transfer the pointer back to the webpage so it does not jump.
         val webpage = tabsModel.currentTab.value?.webEngine?.getCursorDrawerDelegate()
         if (webpage != null) {
@@ -1090,7 +1097,9 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
             )
         }
         overlay.stopCursor()
-        vb.rlRoot.removeView(overlay)
+        // GONE prevents input interception and drawing between menu openings,
+        // while keeping its allocated cursor/adapter for the next opening.
+        overlay.visibility = View.GONE
         webpage?.animateAppearing()
     }
 

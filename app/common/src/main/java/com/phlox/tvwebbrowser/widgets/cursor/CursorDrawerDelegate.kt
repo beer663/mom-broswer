@@ -228,6 +228,7 @@ class CursorDrawerDelegate(val context: Context, val surface: View) {
         if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_POINTER_DOWN) {
             downTime = SystemClock.uptimeMillis()
         }
+        if (touchInterceptor?.invoke(surface, x, y, action) == true) return
         val eventTime = SystemClock.uptimeMillis()
         val properties = arrayOfNulls<MotionEvent.PointerProperties>(1)
         val pp1 = MotionEvent.PointerProperties()
@@ -330,9 +331,17 @@ class CursorDrawerDelegate(val context: Context, val surface: View) {
     }
 
     fun dispatchDraw(canvas: Canvas) {
+        drawCursorAt(canvas, cursorPosition.x, cursorPosition.y)
+        // Tell any native overlay sitting above the page (the inline video player) to redraw,
+        // so it can draw the cursor on top of itself.
+        overlayRedrawHook?.invoke(this)
+    }
+
+    /** Draws the cursor (if it is currently visible) centred at [cx],[cy] in [canvas] coordinates. */
+    fun isCursorVisibleForOverlay(): Boolean = grabMode || !isCursorDisappear
+
+    fun drawCursorAt(canvas: Canvas, cx: Float, cy: Float) {
         if (grabMode || !isCursorDisappear) {
-            val cx = cursorPosition.x
-            val cy = cursorPosition.y
             val radius = if (dpadCenterPressed) cursorRadiusPressed else
                     (cursorRadius * cursorRadiusAnimationMultiplier)
 
@@ -654,6 +663,21 @@ class CursorDrawerDelegate(val context: Context, val surface: View) {
 
     companion object {
         private val TAG = CursorDrawerDelegate::class.java.simpleName
+
+        /**
+         * Optional hook that lets a native overlay (the inline video player's button)
+         * consume the cursor's synthetic touches. Args: surface view, x, y, MotionEvent action.
+         * Return true to consume the event so it is not sent to the web page.
+         */
+        @JvmField
+        var touchInterceptor: ((View, Float, Float, Int) -> Boolean)? = null
+
+        /**
+         * Called every time a cursor surface redraws. A native overlay above the page uses it
+         * to repaint itself and draw the cursor on top (the page's own cursor is hidden under it).
+         */
+        @JvmField
+        var overlayRedrawHook: ((CursorDrawerDelegate) -> Unit)? = null
         private const val UNCHANGED = Integer.MIN_VALUE
         private const val CURSOR_DISAPPEAR_TIMEOUT = 5000
         private const val USE_SCROLL_HACK = true
