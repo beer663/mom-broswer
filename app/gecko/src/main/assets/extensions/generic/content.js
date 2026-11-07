@@ -11,7 +11,15 @@ window.addEventListener('load', function () {
 const communicatePort = browser.runtime.connectNative("tvbro_content");
 
 communicatePort.onMessage.addListener(message => {
-    console.log("Received message from native app:", message);
+    if (message && message.type === "nativeInlinePlayback") {
+        // Avoid decoding the same stream twice. Only pause when Media3 is ready.
+        if (message.active) {
+            document.querySelectorAll("video").forEach(v => {
+                try { v.pause(); v.muted = true; } catch (e) {}
+            });
+        }
+        return;
+    }
 });
 
 
@@ -50,6 +58,88 @@ function tvbroVideoIsMuted(video) {
     return !!video && (video.muted || video.volume === 0);
 }
 
+
+// ---- Report the visible video's bounds for inline Media3 playback ----
+// Rectangles are CSS pixels in the TOP document viewport. For cross-origin
+// iframe video players, each parent translates its child's rectangle.
+const MOM_INLINE_RECT_TAG = "__mom_browser_inline_video_rect_1";
+let momLastRectSent = 0;
+const momChildRects = new Map();
+
+function momSendRectToNative(rect) {
+    if (!(rect.width > 50 && rect.height > 40 && rect.viewportWidth > 0 && rect.viewportHeight > 0)) return;
+    try { communicatePort.postMessage(Object.assign({type: "inlineVideoRect"}, rect)); }
+    catch (e) { /* extension port may be gone during navigation */ }
+}
+
+function momRelayRect(rect, force) {
+    if (!rect) return;
+    if (window === window.top) {
+        momSendRectToNative(rect);
+    } else {
+        try { window.parent.postMessage({marker: MOM_INLINE_RECT_TAG, rect: rect}, "*"); }
+        catch (e) {}
+    }
+}
+
+function momFindChildFrame(source) {
+    const frames = document.querySelectorAll("iframe, frame");
+    for (const f of frames) {
+        try { if (f.contentWindow === source) return f; } catch (e) {}
+    }
+    return null;
+}
+
+function momTranslateChildRect(rect, frame) {
+    const r = frame.getBoundingClientRect();
+    const sx = r.width / Math.max(1, rect.viewportWidth);
+    const sy = r.height / Math.max(1, rect.viewportHeight);
+    const left = r.left + rect.x * sx, top = r.top + rect.y * sy;
+    const right = left + rect.width * sx, bottom = top + rect.height * sy;
+    const x = Math.max(0, left), y = Math.max(0, top);
+    return {
+        frameUrl: rect.frameUrl,
+        x: x, y: y,
+        width: Math.max(0, Math.min(window.innerWidth, right) - x),
+        height: Math.max(0, Math.min(window.innerHeight, bottom) - y),
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight
+    };
+}
+
+window.addEventListener("message", event => {
+    if (!event.data || event.data.marker !== MOM_INLINE_RECT_TAG) return;
+    const frame = momFindChildFrame(event.source);
+    if (!frame || !event.data.rect) return;
+    momChildRects.set(frame, event.data.rect);
+    momRelayRect(momTranslateChildRect(event.data.rect, frame), true);
+});
+
+function momReportVideoRect() {
+    const now = Date.now();
+    if (now - momLastRectSent < 450) return; // modest overhead on a TV box
+    momLastRectSent = now;
+    const candidate = tvbroVideoCandidate();
+    if (candidate) {
+        momRelayRect({
+            frameUrl: location.href,
+            x: candidate.left, y: candidate.top,
+            width: candidate.right - candidate.left,
+            height: candidate.bottom - candidate.top,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight
+        }, false);
+    }
+    // Scroll of an ancestor moves a cross-origin iframe, without notifying its
+    // child. Re-translate its last position from the current iframe rectangle.
+    for (const [frame, rect] of momChildRects) {
+        if (!frame.isConnected) { momChildRects.delete(frame); continue; }
+        momRelayRect(momTranslateChildRect(rect, frame), false);
+    }
+}
+
+window.addEventListener("scroll", momReportVideoRect, {passive: true});
+window.addEventListener("resize", momReportVideoRect);
 
 // ---- Button actions (shared by the buttons themselves and the tap detection below) ----
 let tvbroLastActivation = 0;
@@ -256,6 +346,7 @@ function tvbroReportVideoState() {
     tvbroVideoCheckTimer = null;
     tvbroSlowChecks = Array.prototype.some.call(document.querySelectorAll("video"), v => !v.paused && !v.ended);
     tvbroUpdateVideoControls();
+    momReportVideoRect();
     tvbroAutoplayScan();
     const present = tvbroBestVideo() !== null;
     if (present === tvbroLastVideoState) return;
@@ -288,6 +379,7 @@ function tvbroScheduleReposition() {
     requestAnimationFrame(() => {
         tvbroRepositionPending = false;
         tvbroUpdateVideoControls();
+        momReportVideoRect();
     });
 }
 

@@ -46,6 +46,8 @@ interface WebEngine {
     fun trimMemory()
     fun onPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray): Boolean
     fun isSameSession(internalRepresentation: Any): Boolean
+    /** Pause Gecko HTML video while a native inline stream is visibly playing. */
+    fun setNativeInlinePlayback(active: Boolean) {}
     fun stopPlayback()
     fun rewind()
     fun fastForward()

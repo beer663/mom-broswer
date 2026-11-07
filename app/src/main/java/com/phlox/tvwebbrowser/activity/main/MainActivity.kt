@@ -43,6 +43,7 @@ import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
 import android.webkit.WebStorage
 import android.widget.FrameLayout
+import com.phlox.tvwebbrowser.activity.player.InlineStreamPlayer
 import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
@@ -126,6 +127,14 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
     private lateinit var autoUpdateModel: AutoUpdateModel
     private lateinit var uiHandler: Handler
     private var isFullscreen: Boolean = false
+    private val inlinePlayer by lazy {
+        InlineStreamPlayer(this, vb.rlRoot,
+            { tabsModel.currentTab.value?.webEngine?.getView() },
+            { active -> tabsModel.currentTab.value?.webEngine?.setNativeInlinePlayback(active) },
+            { url -> Log.w(TAG, "Inline Media3 could not play $url; website retained") }
+        )
+    }
+
     private lateinit var prefs: SharedPreferences
     protected val config = AppContext.provideConfig()
     private val voiceSearchHelper = VoiceSearchHelper(this, VOICE_SEARCH_REQUEST_CODE,
@@ -402,10 +411,12 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
     }
 
     fun refresh() {
+        inlinePlayer.reset()
         tabsModel.currentTab.value?.webEngine?.reload()
     }
 
     override fun onDestroy() {
+        if (::vb.isInitialized) inlinePlayer.reset()
         Log.d(TAG, "onDestroy")
         //here properties can be uninitialized in case of wrong activity for incognito mode
         //detection and force activity restart in onCreate()
@@ -561,6 +572,7 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
     }
 
     private fun changeTab(newTab: WebTabState) {
+        if (tabsModel.currentTab.value !== newTab) inlinePlayer.reset()
         tabsModel.changeTab(newTab, { tab: WebTabState -> createWebView(tab) }, vb.flWebViewContainer, WebEngineCallback(newTab))
     }
 
@@ -721,6 +733,7 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
     }
 
     override fun onStop() {
+        if (::vb.isInitialized) inlinePlayer.reset()
         super.onStop()
         unbindService(downloadServiceConnection)
         downloadService = null
@@ -801,6 +814,7 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
     }
 
     fun navigate(url: String) {
+        inlinePlayer.reset()
         Log.d(TAG, "navigate: $url")
         // Do not automatically launch Media3 when a live TV site sends us a
         // playlist URL. The website stays visible so the user can select
@@ -960,6 +974,7 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
 
     private fun handleBackNavigation() {
         Log.d(TAG, "handleBackNavigation")
+        if (inlinePlayer.handleBack()) return
         if (tabsModel.currentTab.value?.webEngine?.isVirtualCursorMode() == false) {
             tabsModel.currentTab.value?.webEngine?.setVirtualCursorMode(true)
             backNavigationEventsAdapter.gameControllersLongPressBForBackNavigation = false
@@ -980,6 +995,7 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
     }
 
     private fun showMenuOverlay() {
+        inlinePlayer.setMenuVisible(true)
         // Keep the real page visible under the toolbar and bottom buttons.
         // The old menu hid GeckoView and replaced it with a screenshot. When
         // thumbnails were disabled, that screenshot was empty (white page).
@@ -1023,6 +1039,7 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
     }
 
     private fun hideMenuOverlay(hideBottomButtons: Boolean = true) {
+        inlinePlayer.setMenuVisible(false)
         if (vb.rlActionBar.visibility == View.INVISIBLE) {
             return
         }
@@ -1106,10 +1123,16 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
 
     private inner class WebEngineCallback(val tab: WebTabState) : WebEngineWindowProviderCallback {
         override fun onNativeStreamDetected(url: String, origin: String) {
-            // GeckoView's extension may still report HLS/DASH playlist requests.
-            // Never take over an embedded website video automatically.
-            // In particular, keep playback in the site's chosen server/player.
-            Log.d(TAG, "Inline playback: native takeover disabled")
+            if (tabsModel.currentTab.value !== tab || !config.isWebEngineGecko()) return
+            // The playlist starts inside the current webpage. Let Gecko keep
+            // the browser UI; Media3 will overlay the visible video rectangle.
+            inlinePlayer.detect(url, origin, tab.webEngine.userAgentString)
+        }
+
+        override fun onInlineVideoRect(frameUrl: String, x: Double, y: Double, width: Double,
+                                       height: Double, viewportWidth: Double, viewportHeight: Double) {
+            if (tabsModel.currentTab.value !== tab || !config.isWebEngineGecko()) return
+            inlinePlayer.updateRect(frameUrl, x, y, width, height, viewportWidth, viewportHeight)
         }
 
         override fun getActivity(): Activity {
@@ -1251,6 +1274,7 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
         }
 
         override fun onPageStarted(url: String?) {
+            if (tabsModel.currentTab.value === tab) inlinePlayer.reset()
             tab.hasVideo = false
             onWebViewUpdated(tab)
             val webViewUrl = tab.webEngine.url

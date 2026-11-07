@@ -46,6 +46,10 @@ interface WebEngineWindowProviderCallback {
     fun onVideoPresenceChanged(present: Boolean) {}
     /** Non-blocking playlist observation from the GeckoView extension. */
     fun onNativeStreamDetected(url: String, origin: String) {}
+    /** Normalized video rectangle in the top webpage viewport, including nested iframes. */
+    fun onInlineVideoRect(frameUrl: String, x: Double, y: Double, width: Double,
+                          height: Double, viewportWidth: Double, viewportHeight: Double) {}
+
     fun onPrepareForFullscreen()
     fun onExitFullscreen()
     fun onVisited(url: String)

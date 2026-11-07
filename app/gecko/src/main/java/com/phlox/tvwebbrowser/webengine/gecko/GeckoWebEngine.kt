@@ -56,7 +56,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
     companion object {
         const val ENGINE_NAME = "GeckoView"
-        private const val APP_WEB_EXTENSION_VERSION = 60
+        private const val APP_WEB_EXTENSION_VERSION = 61
         private const val ADGUARD_DNS_URL = "https://dns.adguard-dns.com/dns-query"
 
         val TAG: String = GeckoWebEngine::class.java.simpleName
@@ -241,6 +241,16 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         if (present != lastReportedVideoPresence) {
             lastReportedVideoPresence = present
             callback?.onVideoPresenceChanged(present)
+        }
+    }
+
+    override fun setNativeInlinePlayback(active: Boolean) {
+        val msg = JSONObject().put("type", "nativeInlinePlayback").put("active", active)
+        uiHandler.post {
+            for (delegate in contentPortDelegates.toList()) {
+                try { delegate.port.postMessage(msg) }
+                catch (e: Exception) { Log.w(TAG, "Unable to notify HTML video", e) }
+            }
         }
     }
 
