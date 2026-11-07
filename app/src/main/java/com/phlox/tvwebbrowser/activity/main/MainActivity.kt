@@ -963,16 +963,14 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
     }
 
     private fun showMenuOverlay() {
-        vb.ivMiniatures.visibility = View.VISIBLE
+        // Keep the real page visible under the toolbar and bottom buttons.
+        // The old menu hid GeckoView and replaced it with a screenshot. When
+        // thumbnails were disabled, that screenshot was empty (white page).
+        // Keeping the view attached also avoids a SurfaceView lifecycle reset.
+        vb.flWebViewContainer.visibility = View.VISIBLE
+        vb.ivMiniatures.visibility = View.INVISIBLE
+        vb.llMiniaturePlaceholder.visibility = View.INVISIBLE
         vb.llBottomPanel.visibility = View.VISIBLE
-        vb.flWebViewContainer.visibility = View.INVISIBLE
-        val currentTab = tabsModel.currentTab.value
-        if (currentTab != null) {
-            lifecycleScope.launch {
-                currentTab.thumbnail = currentTab.webEngine.renderThumbnail(currentTab.thumbnail)
-                displayThumbnail(currentTab)
-            }
-        }
 
         vb.llBottomPanel.translationY = vb.llBottomPanel.height.toFloat()
         vb.llBottomPanel.alpha = 0f
@@ -997,42 +995,14 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
                 .setDuration(300)
                 .setInterpolator(DecelerateInterpolator())
                 .start()
-
-        vb.ivMiniatures.layoutParams = vb.ivMiniatures.layoutParams.apply { this.height = vb.flWebViewContainer.height }
-        vb.ivMiniatures.translationY = 0f
-        vb.ivMiniatures.animate()
-                .translationY(vb.rlActionBar.height.toFloat())
-                .setDuration(300)
-                .setInterpolator(DecelerateInterpolator())
-                .start()
     }
 
     private suspend fun displayThumbnail(currentTab: WebTabState?) {
-        if (currentTab != null) {
-            if (tabByTitleIndex(vb.vTabs.current) != currentTab) return
-            vb.llMiniaturePlaceholder.visibility = View.INVISIBLE
-            vb.ivMiniatures.visibility = View.VISIBLE
-            if (currentTab.thumbnail != null) {
-                vb.ivMiniatures.setImageBitmap(currentTab.thumbnail)
-            } else if (currentTab.thumbnailHash != null) {
-                withContext(Dispatchers.IO) {
-                    val thumbnail = currentTab.loadThumbnail()
-                    withContext(Dispatchers.Main) {
-                        if (thumbnail != null) {
-                            vb.ivMiniatures.setImageBitmap(currentTab.thumbnail)
-                        } else {
-                            vb.ivMiniatures.setImageResource(0)
-                        }
-                    }
-                }
-            } else {
-                vb.ivMiniatures.setImageResource(0)
-            }
-        } else {
-            vb.llMiniaturePlaceholder.visibility = View.VISIBLE
-            vb.ivMiniatures.setImageResource(0)
-            vb.ivMiniatures.visibility = View.INVISIBLE
-        }
+        // The menu now shows the actual webpage, not a screenshot preview.
+        // Called by tab-title changes and page-finished events; leave those
+        // callbacks intact but do not cover the live page with a bitmap.
+        vb.ivMiniatures.visibility = View.INVISIBLE
+        vb.llMiniaturePlaceholder.visibility = View.INVISIBLE
     }
 
     private fun hideMenuOverlay(hideBottomButtons: Boolean = true) {
@@ -1050,23 +1020,11 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
                 .setInterpolator(DecelerateInterpolator())
                 .withEndAction {
                     vb.rlActionBar.visibility = View.INVISIBLE
-                }
-                .start()
-
-        if (vb.llMiniaturePlaceholder.visibility == View.VISIBLE) {
-            vb.llMiniaturePlaceholder.visibility = View.INVISIBLE
-            vb.ivMiniatures.visibility = View.VISIBLE
-        }
-
-        vb.ivMiniatures.translationY = vb.rlActionBar.height.toFloat()
-        vb.ivMiniatures.animate()
-                .translationY(0f)
-                .setDuration(300)
-                .setInterpolator(DecelerateInterpolator())
-                .withEndAction {
                     vb.ivMiniatures.visibility = View.INVISIBLE
-                    vb.rlActionBar.visibility = View.INVISIBLE
+                    vb.llMiniaturePlaceholder.visibility = View.INVISIBLE
                     vb.ivMiniatures.setImageResource(0)
+                    // Preserve tab switching when the user chooses a tab from
+                    // the menu; no screenshot or view detach is needed.
                     syncTabWithTitles()
                     vb.flWebViewContainer.visibility = View.VISIBLE
                     if (hideBottomButtons) {
