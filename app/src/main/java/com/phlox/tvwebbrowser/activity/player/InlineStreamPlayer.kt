@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
@@ -45,6 +46,13 @@ class InlineStreamPlayer(
     private val onActiveChanged: (Boolean) -> Unit,
     private val onFailed: (String) -> Unit
 ) {
+    private companion object {
+        const val TAG = "MomBrowserMedia3"
+        // Some live-TV hosts take much longer than 15 seconds to connect.
+        const val STARTUP_TIMEOUT_MS = 120_000L
+        // Only applies AFTER the stream has reached READY at least once.
+        const val REBUFFER_TIMEOUT_MS = 90_000L
+    }
     private data class Box(
         val frameUrl: String, val x: Double, val y: Double,
         val width: Double, val height: Double,
@@ -69,6 +77,8 @@ class InlineStreamPlayer(
     private var ready = false
     private var oldUiFlags: Int? = null
     private var timeout: Runnable? = null
+    private var bufferingTimeout: Runnable? = null
+    private var attemptedBufferingRecovery = false
     private val startPending = Runnable { startIfPositioned() }
 
     // The page's virtual cursor sends its clicks to GeckoView only, so it cannot press the
@@ -221,6 +231,8 @@ class InlineStreamPlayer(
         fullscreen = false
         muted = true
         ready = false
+        attemptedBufferingRecovery = false
+        cancelBufferingTimeout()
 
         val host = object : FrameLayout(activity) {
             override fun dispatchDraw(canvas: Canvas) {
@@ -284,7 +296,7 @@ class InlineStreamPlayer(
         }
         val http = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(headers).setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15000).setReadTimeoutMs(15000)
+            .setConnectTimeoutMs(60000).setReadTimeoutMs(60000)
         req.userAgent?.takeIf { it.isNotBlank() }?.let { http.setUserAgent(it) }
         val factory = DefaultMediaSourceFactory(DefaultDataSource.Factory(activity, http))
         // Decoder fallback lets Media3 try another decoder when a TV chip's first choice fails.
@@ -296,22 +308,41 @@ class InlineStreamPlayer(
             MimeTypes.APPLICATION_MPD else MimeTypes.APPLICATION_M3U8
         p.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
-                if (current?.url != req.url) return
-                if (state == Player.STATE_READY) {
-                    ready = true
-                    cancelTimeout()
-                    host.visibility = if (menuVisible) View.INVISIBLE else View.VISIBLE
-                    // Install hooks only after video is ready. Before that we do not
-                    // intercept clicks or ask Android to draw a second cursor.
-                    CursorDrawerDelegate.touchInterceptor = cursorInterceptor
-                    CursorDrawerDelegate.overlayRedrawHook = cursorRedrawHook
-                    activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                    onActiveChanged(true)
-                    // Do not take keyboard focus: that stops the remote moving the cursor.
+                // Also check the player instance: a previous session can report late events.
+                if (current?.url != req.url || exo !== p) return
+                Log.d(TAG, "Media3 state=$state host=${Uri.parse(req.url).host}")
+                when (state) {
+                    Player.STATE_READY -> {
+                        cancelBufferingTimeout()
+                        if (!ready) {
+                            ready = true
+                            cancelTimeout()
+                            host.visibility = if (menuVisible) View.INVISIBLE else View.VISIBLE
+                            // Hook the remote cursor only after native video is ready.
+                            CursorDrawerDelegate.touchInterceptor = cursorInterceptor
+                            CursorDrawerDelegate.overlayRedrawHook = cursorRedrawHook
+                            activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                            onActiveChanged(true)
+                        }
+                    }
+                    Player.STATE_BUFFERING -> {
+                        // Initial buffering is covered only by the long startup timeout.
+                        // Never force a restart during the first connection attempt.
+                        if (ready) scheduleBufferingRecovery(p, req.url)
+                    }
+                    else -> cancelBufferingTimeout()
+                }
+            }
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (current?.url != req.url || exo !== p) return
+                if (isPlaying) cancelBufferingTimeout()
+                else if (ready && p.playbackState == Player.STATE_BUFFERING) {
+                    scheduleBufferingRecovery(p, req.url)
                 }
             }
             override fun onPlayerError(error: PlaybackException) {
-                if (current?.url != req.url) return
+                if (current?.url != req.url || exo !== p) return
+                Log.e(TAG, "Media3 error code=${error.errorCode} host=${Uri.parse(req.url).host}", error)
                 onFailed(req.url)
                 close(suppressCurrent = true)
             }
@@ -321,13 +352,40 @@ class InlineStreamPlayer(
         p.prepare()
         p.playWhenReady = true
         val timeoutTask = Runnable {
-            if (current?.url == req.url && !ready) {
+            if (current?.url == req.url && exo === p && !ready) {
+                Log.w(TAG, "Initial stream did not reach READY within ${STARTUP_TIMEOUT_MS / 1000}s")
                 onFailed(req.url)
                 close(suppressCurrent = true)
             }
         }
         timeout = timeoutTask
-        handler.postDelayed(timeoutTask, 15000)
+        handler.postDelayed(timeoutTask, STARTUP_TIMEOUT_MS)
+        Log.d(TAG, "Waiting up to ${STARTUP_TIMEOUT_MS / 1000}s for initial stream readiness")
+    }
+
+    /** Only try a reconnection if a stream that *already worked* stalls for a long time. */
+    private fun scheduleBufferingRecovery(player: ExoPlayer, url: String) {
+        if (bufferingTimeout != null || attemptedBufferingRecovery || !ready || menuVisible ||
+            !player.playWhenReady || player.playbackState != Player.STATE_BUFFERING) return
+        val task = Runnable {
+            bufferingTimeout = null
+            if (exo !== player || current?.url != url || !ready || menuVisible ||
+                !player.playWhenReady || player.playbackState != Player.STATE_BUFFERING ||
+                attemptedBufferingRecovery) return@Runnable
+            attemptedBufferingRecovery = true
+            Log.w(TAG, "Stream stalled after playback; attempting one Media3 reconnect")
+            // Reuse the player and video surface. Don't reopen fullscreen or a new Activity.
+            player.stop()
+            player.prepare()
+            player.playWhenReady = true
+        }
+        bufferingTimeout = task
+        handler.postDelayed(task, REBUFFER_TIMEOUT_MS)
+    }
+
+    private fun cancelBufferingTimeout() {
+        bufferingTimeout?.let { handler.removeCallbacks(it) }
+        bufferingTimeout = null
     }
 
     private fun cancelTimeout() {
@@ -355,6 +413,11 @@ class InlineStreamPlayer(
             width = (box.width * scaleX).roundToInt().coerceAtMost(w - left).coerceAtLeast(1)
             height = (box.height * scaleY).roundToInt().coerceAtMost(h - top).coerceAtLeast(1)
         }
+        // Frequent webpage position reports should not repeatedly relayout Media3's
+        // surface when the actual video rectangle has not changed.
+        val existing = host.layoutParams as? RelativeLayout.LayoutParams
+        if (existing != null && existing.width == width && existing.height == height &&
+            existing.leftMargin == left && existing.topMargin == top) return
         val lp = RelativeLayout.LayoutParams(width, height)
         lp.leftMargin = left; lp.topMargin = top
         host.layoutParams = lp
@@ -380,6 +443,7 @@ class InlineStreamPlayer(
 
     fun setMenuVisible(visible: Boolean) {
         menuVisible = visible
+        if (visible) cancelBufferingTimeout()
         holder?.visibility = if (visible || !ready) View.INVISIBLE else View.VISIBLE
         if (visible) {
             consumingCursorTouch = false
@@ -389,11 +453,18 @@ class InlineStreamPlayer(
             lastCursorY = Float.NaN
         }
         if (ready) exo?.playWhenReady = !visible
+        if (!visible && ready) exo?.let { player ->
+            if (player.playbackState == Player.STATE_BUFFERING) {
+                current?.let { scheduleBufferingRecovery(player, it.url) }
+            }
+        }
     }
 
     fun close(suppressCurrent: Boolean = false) {
         handler.removeCallbacks(startPending)
         cancelTimeout()
+        cancelBufferingTimeout()
+        attemptedBufferingRecovery = false
         if (suppressCurrent) current?.url?.let { cooldown[it] = SystemClock.uptimeMillis() + 120000L }
         if (fullscreen) oldUiFlags?.let { activity.window.decorView.systemUiVisibility = it }
         oldUiFlags = null

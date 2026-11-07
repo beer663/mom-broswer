@@ -56,7 +56,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
     companion object {
         const val ENGINE_NAME = "GeckoView"
-        private const val APP_WEB_EXTENSION_VERSION = 61
+        private const val APP_WEB_EXTENSION_VERSION = 62
         private const val ADGUARD_DNS_URL = "https://dns.adguard-dns.com/dns-query"
 
         val TAG: String = GeckoWebEngine::class.java.simpleName
@@ -97,7 +97,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                         .cookieBehaviorPrivateMode(
                             ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS
                         )
-                        .enhancedTrackingProtectionLevel(ContentBlocking.EtpLevel.STRICT)
+                        .enhancedTrackingProtectionLevel(ContentBlocking.EtpLevel.DEFAULT)
                         .build()
                 )
 

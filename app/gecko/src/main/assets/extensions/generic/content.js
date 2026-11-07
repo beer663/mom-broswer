@@ -383,16 +383,51 @@ function tvbroScheduleReposition() {
     });
 }
 
-// video appeared / was removed / changed
-new MutationObserver(tvbroScheduleVideoCheck).observe(document, { childList: true, subtree: true });
-// media events don't bubble, so listen in the capture phase
-["loadedmetadata", "play", "playing", "pause", "emptied", "resize", "volumechange"].forEach(name =>
-    document.addEventListener(name, tvbroScheduleVideoCheckNow, true));
-// scrolled / resized (video moved on or off screen)
-window.addEventListener("scroll", tvbroScheduleReposition, { passive: true });
-window.addEventListener("resize", tvbroScheduleReposition);
-// cheap safety net for anything the above misses (players that resize without events)
-setInterval(tvbroScheduleVideoCheck, 2000);
+// ---- Avoid page-wide video scanning inside tiny advertising iframes ----
+// The top page and normal-size players behave exactly as in v37. A small child
+// frame starts without a DOM MutationObserver or the 2-second video scan; if it
+// later expands into a real player, it activates the normal watchers once.
+const MOM_MIN_VIDEO_FRAME_WIDTH = 160;
+const MOM_MIN_VIDEO_FRAME_HEIGHT = 90;
+let momVideoWatchersStarted = false;
+let momSmallFrameProbe = null;
+
+function momFrameLargeEnoughForVideoWatchers() {
+    return window === window.top ||
+        (window.innerWidth >= MOM_MIN_VIDEO_FRAME_WIDTH &&
+         window.innerHeight >= MOM_MIN_VIDEO_FRAME_HEIGHT);
+}
+
+function momActivateVideoWatchers() {
+    if (momVideoWatchersStarted || !momFrameLargeEnoughForVideoWatchers()) return;
+    momVideoWatchersStarted = true;
+    if (momSmallFrameProbe !== null) {
+        clearInterval(momSmallFrameProbe);
+        momSmallFrameProbe = null;
+    }
+
+    // Existing video detection / autoplay / inline-rectangle reporting is unchanged.
+    new MutationObserver(tvbroScheduleVideoCheck).observe(document, { childList: true, subtree: true });
+    // Media events do not bubble; watch in the capture phase.
+    ["loadedmetadata", "play", "playing", "pause", "emptied", "resize", "volumechange"].forEach(name =>
+        document.addEventListener(name, tvbroScheduleVideoCheckNow, true));
+    window.addEventListener("scroll", tvbroScheduleReposition, { passive: true });
+    window.addEventListener("resize", tvbroScheduleReposition);
+    setInterval(tvbroScheduleVideoCheck, 2000);
+    tvbroScheduleVideoCheckNow();
+}
+
+momActivateVideoWatchers();
+if (!momVideoWatchersStarted) {
+    // A hidden/small player iframe may expand after a server is selected.
+    // Resize/load catches most cases; the 5-second probe catches CSS-only changes.
+    window.addEventListener("resize", momActivateVideoWatchers);
+    window.addEventListener("load", momActivateVideoWatchers, { once: true });
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", momActivateVideoWatchers, { once: true });
+    }
+    momSmallFrameProbe = setInterval(momActivateVideoWatchers, 5000);
+}
 
 
 // ---- Autoplay: start every video that is on screen, however small or large (always on) ----
@@ -490,6 +525,7 @@ const tvbroVideoObserver = ("IntersectionObserver" in window)
 // Starting every video of a page at once (feeds, previews, ads) overloads weak devices: autoplay only the
 // biggest one that is on screen in this frame, and nothing while a video of this frame is already playing.
 function tvbroAutoplayScan() {
+    if (!momVideoWatchersStarted) return; // no video work in tiny ad frames
     const videos = document.querySelectorAll("video");
     let playing = false;
     let best = null;
