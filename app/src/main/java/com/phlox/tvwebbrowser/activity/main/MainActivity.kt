@@ -93,7 +93,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.InputStream
@@ -468,6 +467,15 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
         }
 
         val currentTab = tabsModel.currentTab.value
+        if (currentTab != null) {
+            lifecycleScope.launch {
+                try {
+                    tabsModel.findHostConfig(currentTab, false)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Unable to load restored tab popup rule", e)
+                }
+            }
+        }
         val isBundledHome = config.homePageMode == Config.HomePageMode.HOME_PAGE &&
             currentTab != null &&
             (currentTab.url == Config.HOME_URL_ALIAS ||
@@ -727,10 +735,19 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
 
     override fun onPause() {
         unregisterReceiver(mConnectivityChangeReceiver)
-        tabsModel.currentTab.value?.apply {
-            webEngine.onPause()
-            onPause()
-            runBlocking { tabsModel.saveTab(this@apply) }
+        val currentTabToSave = tabsModel.currentTab.value
+        if (currentTabToSave != null) {
+            currentTabToSave.webEngine.onPause()
+            // Snapshot GeckoSession state while still on the UI thread.
+            currentTabToSave.onPause()
+            // Room and file writes must not block Android's onPause callback.
+            lifecycleScope.launch {
+                try {
+                    tabsModel.saveTab(currentTabToSave)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Unable to save paused tab", e)
+                }
+            }
         }
         super.onPause()
     }
@@ -1242,6 +1259,14 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
             } else if (url != null) {
                 tab.url = url
             }
+            // Load any site-specific popup rule asynchronously before a popup asks for it.
+            lifecycleScope.launch {
+                try {
+                    tabsModel.findHostConfig(tab, false)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Unable to load popup rule", e)
+                }
+            }
             if (tabByTitleIndex(vb.vTabs.current) == tab) {
                 vb.vActionBar.setAddressBoxText(tab.url)
             }
@@ -1299,7 +1324,11 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
         }
 
         override fun shouldBlockNewWindow(dialog: Boolean, userGesture: Boolean): Boolean {
-            val hostConfig = runBlocking(Dispatchers.Main.immediate){ tabsModel.findHostConfig(tab, false) }
+            // This callback must return synchronously. Never run a suspend Room query
+            // inside runBlocking(Main) here: popups can freeze the UI indefinitely.
+            // Use the per-tab cached setting; while it loads use TV Bro's default.
+            val hostname = try { URL(tab.url).host } catch (_: Exception) { null }
+            val hostConfig = tab.cachedHostConfig?.takeIf { it.hostName == hostname }
             val currentBlockPopupsLevelValue = hostConfig?.popupBlockLevel ?: HostConfig.DEFAULT_BLOCK_POPUPS_VALUE
             return when (currentBlockPopupsLevelValue) {
                 HostConfig.POPUP_BLOCK_NONE -> false
