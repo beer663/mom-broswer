@@ -112,8 +112,65 @@ window.addEventListener("message", event => {
     const frame = momFindChildFrame(event.source);
     if (!frame || !event.data.rect) return;
     momChildRects.set(frame, event.data.rect);
+    momScheduleAlign();
     momRelayRect(momTranslateChildRect(event.data.rect, frame), true);
 });
+
+// ---- Lightweight, 20-second automatic video alignment ----
+// Sites sometimes open a stream ABOVE the clicked server link. During the first
+// 20 seconds of a new page, look for one large player and bring its top into
+// view if clipped. Never force fullscreen or modify the Media3 player.
+// No polling is added: the existing video checks invoke momScheduleAlign().
+let momAlignTimer = null;
+let momAlignFinished = false;
+const momAlignDeadline = performance.now() + 20000;
+
+function momScheduleAlign() {
+    if (window !== window.top || momAlignFinished || momAlignTimer !== null) return;
+    if (performance.now() >= momAlignDeadline) return;
+    momAlignTimer = setTimeout(momAlignBigVideo, 400);
+}
+
+function momAlignBigVideo() {
+    momAlignTimer = null;
+    if (momAlignFinished || performance.now() >= momAlignDeadline ||
+        window !== window.top || document.fullscreenElement) return;
+    try {
+        let target = null;
+        let biggestArea = 0;
+        const consider = (el) => {
+            const rect = el.getBoundingClientRect();
+            if (rect.width < 320 || rect.height < 180 ||
+                rect.width < window.innerWidth * 0.4) return;
+            const area = rect.width * rect.height;
+            if (area > biggestArea) { target = el; biggestArea = area; }
+        };
+        document.querySelectorAll("video").forEach(consider);
+        // Only frames that have reported a video are considered; do not jump
+        // to unrelated ad or navigation iframes.
+        for (const frame of momChildRects.keys()) {
+            if (frame.isConnected) consider(frame);
+            else momChildRects.delete(frame);
+        }
+        if (!target) return; // video might be added later in the 20s window
+
+        const rect = target.getBoundingClientRect();
+        // If it is completely below the viewport, leave the user's page
+        // position alone until the site moves/opens the video.
+        if (rect.top >= window.innerHeight) return;
+        const clippedAbove = rect.top < -8;
+        const clippedBelow = rect.top > 85 && rect.bottom > window.innerHeight;
+        if (clippedAbove || clippedBelow) {
+            target.scrollIntoView({ behavior: "auto", block: "start", inline: "nearest" });
+            // Update the native overlay's rectangle after the scroll settles.
+            setTimeout(momReportVideoRect, 140);
+        }
+        // Identified the player's location: stop scanning for this page.
+        momAlignFinished = true;
+    } catch (_) {
+        // A site can detach an iframe during a server switch. Leave browsing alone.
+    }
+}
 
 function momReportVideoRect() {
     const now = Date.now();
@@ -347,6 +404,7 @@ function tvbroReportVideoState() {
     tvbroSlowChecks = Array.prototype.some.call(document.querySelectorAll("video"), v => !v.paused && !v.ended);
     tvbroUpdateVideoControls();
     momReportVideoRect();
+    momScheduleAlign();
     tvbroAutoplayScan();
     const present = tvbroBestVideo() !== null;
     if (present === tvbroLastVideoState) return;

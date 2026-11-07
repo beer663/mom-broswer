@@ -139,6 +139,14 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
 
     private var menuCursorOverlay: MenuCursorLayout? = null
 
+    /** True only for the bundled Home page, not for arbitrary websites. */
+    private fun isBundledHomeTab(tab: WebTabState?): Boolean {
+        return config.homePageMode == Config.HomePageMode.HOME_PAGE && tab != null &&
+            (tab.url == Config.HOME_URL_ALIAS ||
+                tab.url.substringBefore('#').substringBefore('?').trimEnd('/') ==
+                    Config.HOME_PAGE_URL.trimEnd('/'))
+    }
+
     private lateinit var prefs: SharedPreferences
     protected val config = AppContext.provideConfig()
     private val voiceSearchHelper = VoiceSearchHelper(this, VOICE_SEARCH_REQUEST_CODE,
@@ -1047,6 +1055,14 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
             this, vb.rlRoot, vb.rlActionBar, vb.llBottomPanel
         ).also {
             menuCursorOverlay = it
+            // Only let the virtual cursor reach bundled-Home bookmark tiles;
+            // on normal websites, an open menu continues to block webpage taps.
+            it.pageTapsEnabled = { isBundledHomeTab(tabsModel.currentTab.value) }
+            it.onPageTap = {
+                if (vb.rlActionBar.isVisible || vb.llBottomPanel.isVisible) {
+                    hideMenuOverlay()
+                }
+            }
             // Toolbar and inline Media3 can have elevation: keep the pointer above both.
             it.elevation = 24f * resources.displayMetrics.density
             vb.rlRoot.addView(it, RelativeLayout.LayoutParams(
