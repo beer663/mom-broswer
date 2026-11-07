@@ -201,7 +201,6 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
 
         vb.llBottomPanel.childs.forEach {
             it.setOnTouchListener(bottomButtonsOnTouchListener)
-            it.onFocusChangeListener = bottomButtonsFocusListener
             it.setOnKeyListener(bottomButtonsKeyListener)
         }
 
@@ -353,37 +352,44 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
         hideMenuOverlay()
     }
 
-    private val bottomButtonsOnTouchListener = View.OnTouchListener{ v, e ->
-        when (e.action) {
-            MotionEvent.ACTION_DOWN -> {
-                return@OnTouchListener true
-            }
+    private val bottomButtonsOnTouchListener = View.OnTouchListener { button, event ->
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> true
             MotionEvent.ACTION_UP -> {
-                hideMenuOverlay(false)
-                v.performClick()
-                return@OnTouchListener true
+                // First run the button action (Home, Back, Refresh, etc.), then
+                // dismiss BOTH menu panels. Keeping the bottom panel visible
+                // after its toolbar closed left a misleading, stranded menu.
+                button.performClick()
+                hideMenuOverlay()
+                true
             }
-            else -> return@OnTouchListener false
+            MotionEvent.ACTION_CANCEL -> true
+            else -> false
         }
     }
 
-    private val bottomButtonsFocusListener = View.OnFocusChangeListener { view, hasFocus ->
-        if (hasFocus) {
-            hideMenuOverlay(false)
-        }
-    }
-
-    private val bottomButtonsKeyListener = View.OnKeyListener { view, i, keyEvent ->
+    private val bottomButtonsKeyListener = View.OnKeyListener { button, _, keyEvent ->
         when (keyEvent.keyCode) {
             KeyEvent.KEYCODE_DPAD_UP -> {
                 if (keyEvent.action == KeyEvent.ACTION_UP) {
                     hideBottomPanel()
                     tabsModel.currentTab.value?.webEngine?.getView()?.requestFocus()
                 }
-                return@OnKeyListener true
+                true
             }
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_BUTTON_A -> {
+                if (keyEvent.action == KeyEvent.ACTION_UP && !keyEvent.isCanceled) {
+                    // Return false so Android invokes the normal focused
+                    // button click. Close both panels AFTER that click runs.
+                    button.post { hideMenuOverlay() }
+                }
+                false
+            }
+            else -> false
         }
-        false
     }
 
     private fun tabByTitleIndex(index: Int) =
@@ -955,7 +961,7 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
                 // Android toolbar buttons. While the menu is open, feed remote input
                 // to a separate, topmost cursor that dispatches touches to the menu.
                 // Keep normal key handling for Back, shortcuts, and the IME.
-                if (vb.rlActionBar.isVisible &&
+                if ((vb.rlActionBar.isVisible || vb.llBottomPanel.isVisible) &&
                     menuCursorOverlay?.dispatchKeyEvent(event) == true) {
                     return true
                 }
@@ -983,7 +989,7 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
                 if (vb.rlActionBar.isVisible && vb.vActionBar.isAddressInputFocused()) {
                     return localCallback.dispatchGenericMotionEvent(event)
                 }
-                if (vb.rlActionBar.isVisible &&
+                if ((vb.rlActionBar.isVisible || vb.llBottomPanel.isVisible) &&
                     menuCursorOverlay?.dispatchGenericMotionEvent(event) == true) {
                     return true
                 }
@@ -1088,9 +1094,21 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
         webpage?.animateAppearing()
     }
 
+    /** Keep the native-menu pointer while menu controls are visible. */
+    private fun updateMenuCursorForVisibleControls() {
+        if (vb.rlActionBar.isVisible || vb.llBottomPanel.isVisible) {
+            showMenuCursor()
+        } else {
+            hideMenuCursor()
+        }
+    }
+
     private fun showMenuOverlay() {
+        // Cancel any pending close animation before showing controls again.
+        // Otherwise an older animation can hide a newly reopened menu.
+        vb.rlActionBar.animate().cancel()
+        vb.llBottomPanel.animate().cancel()
         inlinePlayer.setMenuVisible(true)
-        showMenuCursor()
         // Keep the real page visible under the toolbar and bottom buttons.
         // The old menu hid GeckoView and replaced it with a screenshot. When
         // thumbnails were disabled, that screenshot was empty (white page).
@@ -1099,6 +1117,8 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
         vb.ivMiniatures.visibility = View.INVISIBLE
         vb.llMiniaturePlaceholder.visibility = View.INVISIBLE
         vb.llBottomPanel.visibility = View.VISIBLE
+        vb.rlActionBar.visibility = View.VISIBLE
+        updateMenuCursorForVisibleControls()
 
         vb.llBottomPanel.translationY = vb.llBottomPanel.height.toFloat()
         vb.llBottomPanel.alpha = 0f
@@ -1114,7 +1134,6 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
 
         vb.vActionBar.dismissExtendedAddressBarMode()
 
-        vb.rlActionBar.visibility = View.VISIBLE
         vb.rlActionBar.translationY = -vb.rlActionBar.height.toFloat()
         vb.rlActionBar.alpha = 0f
         vb.rlActionBar.animate()
@@ -1134,12 +1153,17 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
     }
 
     private fun hideMenuOverlay(hideBottomButtons: Boolean = true) {
+        // Closing the menu hides BOTH toolbar and bottom controls.
+        // While either panel is animating away, retain cursor ownership until
+        // the last visible panel has finished closing.
         inlinePlayer.setMenuVisible(false)
-        if (vb.rlActionBar.visibility == View.INVISIBLE) {
-            return
-        }
         if (hideBottomButtons) {
             hideBottomPanel()
+        }
+        if (vb.rlActionBar.visibility != View.VISIBLE) {
+            // The toolbar was already closed; do not strand the bottom panel.
+            updateMenuCursorForVisibleControls()
+            return
         }
 
         vb.rlActionBar.animate()
@@ -1149,7 +1173,8 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
                 .setInterpolator(DecelerateInterpolator())
                 .withEndAction {
                     vb.rlActionBar.visibility = View.INVISIBLE
-                    hideMenuCursor()
+                    // Remove the menu pointer only after both panels hide.
+                    updateMenuCursorForVisibleControls()
                     vb.ivMiniatures.visibility = View.INVISIBLE
                     vb.llMiniaturePlaceholder.visibility = View.INVISIBLE
                     vb.ivMiniatures.setImageResource(0)
@@ -1177,7 +1202,10 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
     }
 
     private fun hideBottomPanel() {
-        if (vb.llBottomPanel.visibility != View.VISIBLE) return
+        if (vb.llBottomPanel.visibility != View.VISIBLE) {
+            updateMenuCursorForVisibleControls()
+            return
+        }
         vb.llBottomPanel.animate()
                 .setDuration(300)
                 .setInterpolator(AccelerateInterpolator())
@@ -1185,6 +1213,8 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
                 .withEndAction {
                     vb.llBottomPanel.translationY = 0f
                     vb.llBottomPanel.visibility = View.INVISIBLE
+                    // Return the pointer to GeckoView after both panels close.
+                    updateMenuCursorForVisibleControls()
                 }
                 .start()
     }
