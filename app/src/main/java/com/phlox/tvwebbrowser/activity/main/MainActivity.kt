@@ -43,6 +43,7 @@ import android.webkit.MimeTypeMap
 import android.webkit.URLUtil
 import android.webkit.WebStorage
 import android.widget.FrameLayout
+import android.widget.RelativeLayout
 import com.phlox.tvwebbrowser.activity.player.InlineStreamPlayer
 import android.widget.PopupMenu
 import android.widget.Toast
@@ -67,6 +68,7 @@ import com.phlox.tvwebbrowser.activity.main.dialogs.favorites.FavoritesDialog
 import com.phlox.tvwebbrowser.activity.main.dialogs.settings.SettingsDialog
 import com.phlox.tvwebbrowser.activity.main.view.ActionBar
 import com.phlox.tvwebbrowser.activity.main.view.CursorMenuView
+import com.phlox.tvwebbrowser.activity.main.view.MenuCursorLayout
 import com.phlox.tvwebbrowser.activity.main.view.tabs.TabsAdapter.Listener
 import com.phlox.tvwebbrowser.databinding.ActivityMainBinding
 import com.phlox.tvwebbrowser.model.Download
@@ -134,6 +136,8 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
             { url -> Log.w(TAG, "Inline Media3 could not play $url; website retained") }
         )
     }
+
+    private var menuCursorOverlay: MenuCursorLayout? = null
 
     private lateinit var prefs: SharedPreferences
     protected val config = AppContext.provideConfig()
@@ -416,7 +420,14 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
     }
 
     override fun onDestroy() {
-        if (::vb.isInitialized) inlinePlayer.reset()
+        if (::vb.isInitialized) {
+            menuCursorOverlay?.let { overlay ->
+                menuCursorOverlay = null
+                overlay.stopCursor()
+                vb.rlRoot.removeView(overlay)
+            }
+            inlinePlayer.reset()
+        }
         Log.d(TAG, "onDestroy")
         //here properties can be uninitialized in case of wrong activity for incognito mode
         //detection and force activity restart in onCreate()
@@ -931,6 +942,15 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
                 //Log.d(TAG, "dispatchKeyEvent event: $event")
                 backNavigationEventsAdapter.dispatchKeyEvent(event)
 
+                // The webpage's virtual cursor belongs to GeckoView and cannot click
+                // Android toolbar buttons. While the menu is open, feed remote input
+                // to a separate, topmost cursor that dispatches touches to the menu.
+                // Keep normal key handling for Back, shortcuts, and the IME.
+                if (vb.rlActionBar.isVisible &&
+                    menuCursorOverlay?.dispatchKeyEvent(event) == true) {
+                    return true
+                }
+
                 val keyCode = if (event.keyCode != 0) event.keyCode else event.scanCode
                 val keyCodeBackNavigation = keyCode == KeyEvent.KEYCODE_ESCAPE ||
                         keyCode == KeyEvent.KEYCODE_BUTTON_B || keyCode == KeyEvent.KEYCODE_BACK
@@ -947,6 +967,10 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
             override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
                 //Log.d(TAG, "dispatchGenericMotionEvent event: $event")
                 if (backNavigationEventsAdapter.dispatchGenericMotionEvent(event)) {
+                    return true
+                }
+                if (vb.rlActionBar.isVisible &&
+                    menuCursorOverlay?.dispatchGenericMotionEvent(event) == true) {
                     return true
                 }
                 return localCallback.dispatchGenericMotionEvent(event)
@@ -994,8 +1018,65 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
         }
     }
 
+    /** Show the TV remote cursor over Android menu widgets, not behind them in GeckoView. */
+    private fun showMenuCursor() {
+        if (menuCursorOverlay != null) return
+        val overlay = MenuCursorLayout(this, vb.rlRoot, vb.rlActionBar, vb.llBottomPanel)
+        menuCursorOverlay = overlay
+        // The toolbar and inline player have elevation; draw the pointer above both.
+        overlay.elevation = 24f * resources.displayMetrics.density
+        vb.rlRoot.addView(overlay, RelativeLayout.LayoutParams(
+            RelativeLayout.LayoutParams.MATCH_PARENT,
+            RelativeLayout.LayoutParams.MATCH_PARENT
+        ))
+        overlay.bringToFront()
+        overlay.post {
+            if (menuCursorOverlay !== overlay) return@post
+            // Preserve the pointer position when crossing from webpage to menu.
+            val previous = tabsModel.currentTab.value?.webEngine?.getCursorDrawerDelegate()
+            if (previous != null) {
+                val pageLocation = IntArray(2)
+                val overlayLocation = IntArray(2)
+                previous.surface.getLocationOnScreen(pageLocation)
+                overlay.getLocationOnScreen(overlayLocation)
+                overlay.cursorDrawerDelegate.cursorPosition.set(
+                    (previous.cursorPosition.x + pageLocation[0] - overlayLocation[0])
+                        .coerceIn(0f, (overlay.width - 1).coerceAtLeast(0).toFloat()),
+                    (previous.cursorPosition.y + pageLocation[1] - overlayLocation[1])
+                        .coerceIn(0f, (overlay.height - 1).coerceAtLeast(0).toFloat())
+                )
+                previous.hideCursor() // avoid drawing a second pointer beneath the menu
+            }
+            overlay.cursorDrawerDelegate.animateAppearing()
+            overlay.invalidate()
+        }
+    }
+
+    private fun hideMenuCursor() {
+        val overlay = menuCursorOverlay ?: return
+        menuCursorOverlay = null
+        // Transfer the pointer back to the webpage so it does not jump.
+        val webpage = tabsModel.currentTab.value?.webEngine?.getCursorDrawerDelegate()
+        if (webpage != null) {
+            val overlayLocation = IntArray(2)
+            val pageLocation = IntArray(2)
+            overlay.getLocationOnScreen(overlayLocation)
+            webpage.surface.getLocationOnScreen(pageLocation)
+            webpage.cursorPosition.set(
+                (overlay.cursorDrawerDelegate.cursorPosition.x + overlayLocation[0] - pageLocation[0])
+                    .coerceIn(0f, (webpage.surface.width - 1).coerceAtLeast(0).toFloat()),
+                (overlay.cursorDrawerDelegate.cursorPosition.y + overlayLocation[1] - pageLocation[1])
+                    .coerceIn(0f, (webpage.surface.height - 1).coerceAtLeast(0).toFloat())
+            )
+        }
+        overlay.stopCursor()
+        vb.rlRoot.removeView(overlay)
+        webpage?.animateAppearing()
+    }
+
     private fun showMenuOverlay() {
         inlinePlayer.setMenuVisible(true)
+        showMenuCursor()
         // Keep the real page visible under the toolbar and bottom buttons.
         // The old menu hid GeckoView and replaced it with a screenshot. When
         // thumbnails were disabled, that screenshot was empty (white page).
@@ -1054,6 +1135,7 @@ open class MainActivity : AppCompatActivity(), ActionBar.Callback {
                 .setInterpolator(DecelerateInterpolator())
                 .withEndAction {
                     vb.rlActionBar.visibility = View.INVISIBLE
+                    hideMenuCursor()
                     vb.ivMiniatures.visibility = View.INVISIBLE
                     vb.llMiniaturePlaceholder.visibility = View.INVISIBLE
                     vb.ivMiniatures.setImageResource(0)
