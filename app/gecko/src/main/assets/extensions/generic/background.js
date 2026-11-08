@@ -26,9 +26,6 @@ browser.webRequest.onBeforeSendHeaders.addListener(details => {
     const origin = details.originUrl || details.documentUrl || "";
     if (!/^https?:\/\//i.test(origin)) return;
 
-    if ((details.requestHeaders || []).some(header =>
-        /^(cookie|authorization)$/i.test(header.name) && header.value)) return;
-
     const now = Date.now();
     const key = `${details.tabId}:${details.frameId}:${details.url}`;
     if (now - (tvbroReported.get(key) || 0) < 30000) return;
