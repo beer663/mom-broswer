@@ -6,9 +6,10 @@ window.addEventListener("load", function () {
 
 const communicatePort = browser.runtime.connectNative("tvbro_content");
 
-// Forward through this frame's session-bound port.
+// The background script supplies the exact requesting tab and frame.
 browser.runtime.onMessage.addListener(message => {
     if (!message || message.type !== "nativeStreamDetected") return;
+
     try {
         communicatePort.postMessage({
             type: "nativeStreamDetected",
@@ -50,6 +51,7 @@ communicatePort.onMessage.addListener(message => {
             if (!v.isConnected || v.currentSrc !== state.source) continue;
 
             v.muted = state.muted;
+
             const info = tvbroAutoplayInfo.get(v);
             if (info) info.userPaused = state.userPaused === true;
 
@@ -67,7 +69,7 @@ communicatePort.onMessage.addListener(message => {
     }
 });
 
-// Find the largest visible video, preferring one that is playing.
+// Find the biggest visible video, preferring one that is already playing.
 function tvbroVideoCandidate() {
     let best = null;
 
@@ -110,18 +112,22 @@ function tvbroVideoIsMuted(video) {
     return !!video && (video.muted || video.volume === 0);
 }
 
-// Report CSS-pixel rectangles in the top document's viewport.
+// Rectangles use CSS pixels in the top document viewport.
 const MOM_INLINE_RECT_TAG = "__mom_browser_inline_video_rect_1";
 let momLastRectSent = 0;
 const momChildRects = new Map();
 
 function momSendRectToNative(rect) {
     if (!(rect.width > 50 && rect.height > 40 &&
-        rect.viewportWidth > 0 && rect.viewportHeight > 0)) return;
+          rect.viewportWidth > 0 && rect.viewportHeight > 0)) return;
 
     try {
-        communicatePort.postMessage(Object.assign({ type: "inlineVideoRect" }, rect));
-    } catch (_) {}
+        communicatePort.postMessage(
+            Object.assign({ type: "inlineVideoRect" }, rect)
+        );
+    } catch (_) {
+        // The extension port may be gone during navigation.
+    }
 }
 
 function momRelayRect(rect, force) {
@@ -141,11 +147,13 @@ function momRelayRect(rect, force) {
 
 function momFindChildFrame(source) {
     const frames = document.querySelectorAll("iframe, frame");
+
     for (const f of frames) {
         try {
             if (f.contentWindow === source) return f;
         } catch (_) {}
     }
+
     return null;
 }
 
@@ -153,6 +161,7 @@ function momTranslateChildRect(rect, frame) {
     const r = frame.getBoundingClientRect();
     const sx = r.width / Math.max(1, rect.viewportWidth);
     const sy = r.height / Math.max(1, rect.viewportHeight);
+
     const left = r.left + rect.x * sx;
     const top = r.top + rect.y * sy;
     const right = left + rect.width * sx;
@@ -187,6 +196,7 @@ function momReportVideoRect() {
     momLastRectSent = now;
 
     const candidate = tvbroVideoCandidate();
+
     if (candidate) {
         momRelayRect({
             frameUrl: location.href,
@@ -204,6 +214,7 @@ function momReportVideoRect() {
             momChildRects.delete(frame);
             continue;
         }
+
         momRelayRect(momTranslateChildRect(rect, frame), false);
     }
 }
@@ -211,15 +222,18 @@ function momReportVideoRect() {
 window.addEventListener("scroll", momReportVideoRect, { passive: true });
 window.addEventListener("resize", momReportVideoRect);
 
-// Floating video controls.
 let tvbroLastActivation = 0;
 
 function tvbroActivate(which) {
     const now = Date.now();
     if (now - tvbroLastActivation < 600) return;
     tvbroLastActivation = now;
-    if (which === "unmute") tvbroDoUnmute();
-    else tvbroDoFullscreen();
+
+    if (which === "unmute") {
+        tvbroDoUnmute();
+    } else {
+        tvbroDoFullscreen();
+    }
 }
 
 function tvbroDoUnmute() {
@@ -247,8 +261,11 @@ function tvbroDoFullscreen() {
 
     try {
         const result = request.call(video);
+
         if (result && typeof result.catch === "function") {
-            result.catch(e => console.log("TV Bro: fullscreen request rejected:", e));
+            result.catch(e =>
+                console.log("TV Bro: fullscreen request rejected:", e)
+            );
         }
     } catch (e) {
         console.log("TV Bro: fullscreen request failed:", e);
@@ -267,11 +284,14 @@ function tvbroButtonAt(x, y) {
 
     for (const [button, name] of candidates) {
         if (!button || button.hidden) continue;
+
         const r = button.getBoundingClientRect();
         if (r.width === 0 || r.height === 0) continue;
 
-        if (x >= r.left - MARGIN && x <= r.right + MARGIN &&
-            y >= r.top - MARGIN && y <= r.bottom + MARGIN) {
+        if (x >= r.left - MARGIN &&
+            x <= r.right + MARGIN &&
+            y >= r.top - MARGIN &&
+            y <= r.bottom + MARGIN) {
             return name;
         }
     }
@@ -300,8 +320,10 @@ function tvbroOnTapCapture(e) {
     e.preventDefault();
     e.stopImmediatePropagation();
 
-    if (e.type === "pointerup" || e.type === "touchend" ||
-        e.type === "mouseup" || e.type === "click") {
+    if (e.type === "pointerup" ||
+        e.type === "touchend" ||
+        e.type === "mouseup" ||
+        e.type === "click") {
         tvbroActivate(which);
     }
 }
@@ -373,16 +395,20 @@ function tvbroCreateVideoControls() {
     tvbroUnmuteButton.title = "Unmute video";
     tvbroUnmuteButton.innerHTML =
         '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3z"/><path d="M15.5 8.5a5 5 0 0 1 0 7l1.4 1.4a7 7 0 0 0 0-9.8l-1.4 1.4zM18.3 5.7a9 9 0 0 1 0 12.6l1.4 1.4a11 11 0 0 0 0-15.4l-1.4 1.4z"/></svg><span>Unmute</span>';
+
     tvbroUnmuteButton.addEventListener(
         "click", () => tvbroActivate("unmute"), true
     );
 
     tvbroFullscreenButton = document.createElement("button");
     tvbroFullscreenButton.type = "button";
-    tvbroFullscreenButton.setAttribute("aria-label", "Make video full screen");
+    tvbroFullscreenButton.setAttribute(
+        "aria-label", "Make video full screen"
+    );
     tvbroFullscreenButton.title = "Make video full screen";
     tvbroFullscreenButton.innerHTML =
         '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h5v2H7v3H5V5zm9 0h5v5h-2V7h-3V5zM5 14h2v5h5v-2H7v-3H5zm14 0h-2v3h-3v2h5v-5z"/><rect x="9" y="9" width="6" height="6" rx=".5"/></svg><span>Full screen</span>';
+
     tvbroFullscreenButton.addEventListener(
         "click", () => tvbroActivate("fullscreen"), true
     );
@@ -440,8 +466,12 @@ if (document.documentElement) {
     );
 }
 
-document.addEventListener("fullscreenchange", tvbroUpdateVideoControls, true);
-document.addEventListener("mozfullscreenchange", tvbroUpdateVideoControls, true);
+document.addEventListener(
+    "fullscreenchange", tvbroUpdateVideoControls, true
+);
+document.addEventListener(
+    "mozfullscreenchange", tvbroUpdateVideoControls, true
+);
 
 let tvbroLastVideoState = false;
 let tvbroVideoCheckTimer = null;
@@ -449,6 +479,7 @@ let tvbroSlowChecks = false;
 
 function tvbroReportVideoState() {
     tvbroVideoCheckTimer = null;
+
     tvbroSlowChecks = Array.prototype.some.call(
         document.querySelectorAll("video"),
         v => !v.paused && !v.ended
@@ -460,6 +491,7 @@ function tvbroReportVideoState() {
 
     const present = tvbroBestVideo() !== null;
     if (present === tvbroLastVideoState) return;
+
     tvbroLastVideoState = present;
 
     try {
@@ -482,7 +514,10 @@ function tvbroScheduleVideoCheck() {
 }
 
 function tvbroScheduleVideoCheckNow() {
-    if (tvbroVideoCheckTimer !== null) clearTimeout(tvbroVideoCheckTimer);
+    if (tvbroVideoCheckTimer !== null) {
+        clearTimeout(tvbroVideoCheckTimer);
+    }
+
     tvbroVideoCheckTimer = setTimeout(tvbroReportVideoState, 300);
 }
 
@@ -499,7 +534,6 @@ function tvbroScheduleReposition() {
     });
 }
 
-// Avoid repeated video scans in tiny advertising frames.
 const MOM_MIN_VIDEO_FRAME_WIDTH = 160;
 const MOM_MIN_VIDEO_FRAME_HEIGHT = 90;
 let momVideoWatchersStarted = false;
@@ -508,11 +542,13 @@ let momSmallFrameProbe = null;
 function momFrameLargeEnoughForVideoWatchers() {
     return window === window.top ||
         (window.innerWidth >= MOM_MIN_VIDEO_FRAME_WIDTH &&
-            window.innerHeight >= MOM_MIN_VIDEO_FRAME_HEIGHT);
+         window.innerHeight >= MOM_MIN_VIDEO_FRAME_HEIGHT);
 }
 
 function momActivateVideoWatchers() {
-    if (momVideoWatchersStarted || !momFrameLargeEnoughForVideoWatchers()) return;
+    if (momVideoWatchersStarted ||
+        !momFrameLargeEnoughForVideoWatchers()) return;
+
     momVideoWatchersStarted = true;
 
     if (momSmallFrameProbe !== null) {
@@ -532,7 +568,285 @@ function momActivateVideoWatchers() {
         document.addEventListener(name, tvbroScheduleVideoCheckNow, true)
     );
 
-    window.addEventListener("scroll", tvbroScheduleReposition, { passive: true });
+    window.addEventListener(
+        "scroll", tvbroScheduleReposition, { passive: true }
+    );
     window.addEventListener("resize", tvbroScheduleReposition);
+
     setInterval(tvbroScheduleVideoCheck, 2000);
-    tvbro
+    tvbroScheduleVideoCheckNow();
+}
+
+momActivateVideoWatchers();
+
+if (!momVideoWatchersStarted) {
+    window.addEventListener("resize", momActivateVideoWatchers);
+    window.addEventListener(
+        "load", momActivateVideoWatchers, { once: true }
+    );
+
+    if (document.readyState === "loading") {
+        document.addEventListener(
+            "DOMContentLoaded", momActivateVideoWatchers, { once: true }
+        );
+    }
+
+    momSmallFrameProbe = setInterval(momActivateVideoWatchers, 5000);
+}
+
+const tvbroAutoplayEnabled = true;
+const tvbroAutoplayInfo = new WeakMap();
+const tvbroObservedVideos = new WeakSet();
+
+function tvbroVideoOnScreen(v) {
+    const r = v.getBoundingClientRect();
+
+    return r.width > 0 &&
+        r.height > 0 &&
+        r.bottom > 0 &&
+        r.right > 0 &&
+        r.top < window.innerHeight &&
+        r.left < window.innerWidth;
+}
+
+function tvbroStartPlayback(video) {
+    const start = () => {
+        const p = video.play();
+        return (p && p.then) ? p : Promise.resolve();
+    };
+
+    start().catch(() => {
+        try {
+            video.muted = true;
+            start().catch(() => {});
+        } catch (_) {}
+    });
+}
+
+const TVBRO_PLAY_OVERLAY_SELECTORS = [
+    ".player-poster", ".play-wrapper", ".poster-icon",
+    ".vjs-big-play-button",
+    ".jw-display-icon-container", ".jw-icon-display",
+    ".plyr__control--overlaid",
+    ".ytp-large-play-button",
+    "[class*='big-play']", "[class*='bigplay']",
+    "button[class*='play-button']",
+    "div[class*='play-button']",
+    "button[class*='play-btn']",
+    "button[aria-label='Play']",
+    "button[title='Play']"
+].join(",");
+
+let tvbroOverlayClicksTotal = 0;
+
+function tvbroClickPlayOverlay(video) {
+    if (tvbroOverlayClicksTotal >= 4) return false;
+
+    let container = video.parentElement;
+
+    for (
+        let depth = 0;
+        container && depth < 6;
+        depth++, container = container.parentElement
+    ) {
+        let found;
+
+        try {
+            found = container.querySelectorAll(
+                TVBRO_PLAY_OVERLAY_SELECTORS
+            );
+        } catch (_) {
+            return false;
+        }
+
+        for (const el of found) {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) continue;
+            if (el.closest("a[href]")) continue;
+
+            tvbroOverlayClicksTotal++;
+
+            el.dispatchEvent(new MouseEvent("click", {
+                bubbles: true,
+                cancelable: true,
+                view: window
+            }));
+
+            return true;
+        }
+
+        if (container === document.body) break;
+    }
+
+    return false;
+}
+
+function tvbroTryAutoplay(video) {
+    if (momNativeInlineActive ||
+        !tvbroAutoplayEnabled ||
+        !video.isConnected) return;
+
+    let info = tvbroAutoplayInfo.get(video);
+
+    if (!info) {
+        info = {
+            attempts: 0,
+            overlayClicks: 0,
+            overlayTimer: null,
+            played: false,
+            userPaused: false
+        };
+
+        tvbroAutoplayInfo.set(video, info);
+    }
+
+    if (info.userPaused || video.ended || !video.paused) return;
+
+    if (info.attempts < 6) {
+        info.attempts++;
+        tvbroStartPlayback(video);
+    }
+
+    if (info.overlayTimer === null && info.overlayClicks < 3) {
+        info.overlayTimer = setTimeout(() => {
+            info.overlayTimer = null;
+
+            if (momNativeInlineActive ||
+                !video.isConnected ||
+                info.userPaused ||
+                video.ended ||
+                !video.paused) return;
+
+            info.overlayClicks++;
+
+            if (tvbroClickPlayOverlay(video)) {
+                setTimeout(() => {
+                    if (!momNativeInlineActive &&
+                        video.isConnected &&
+                        video.paused &&
+                        !video.ended &&
+                        !info.userPaused) {
+                        tvbroStartPlayback(video);
+                    }
+                }, 1200);
+            }
+        }, 1500);
+    }
+}
+
+const tvbroVideoObserver = ("IntersectionObserver" in window)
+    ? new IntersectionObserver(entries => {
+        if (entries.some(en => en.isIntersecting)) {
+            tvbroAutoplayScan();
+        }
+    }, { threshold: 0 })
+    : null;
+
+function tvbroAutoplayScan() {
+    if (momNativeInlineActive || !momVideoWatchersStarted) return;
+
+    const videos = document.querySelectorAll("video");
+    let playing = false;
+    let best = null;
+    let bestArea = 0;
+
+    videos.forEach(v => {
+        if (!tvbroObservedVideos.has(v)) {
+            tvbroObservedVideos.add(v);
+            if (tvbroVideoObserver) tvbroVideoObserver.observe(v);
+        }
+
+        if (!v.paused && !v.ended) {
+            playing = true;
+            return;
+        }
+
+        if (!tvbroVideoOnScreen(v)) return;
+
+        const info = tvbroAutoplayInfo.get(v);
+        if (info && (info.userPaused || info.attempts >= 6)) return;
+
+        const r = v.getBoundingClientRect();
+        const area = r.width * r.height;
+
+        if (area > bestArea) {
+            best = v;
+            bestArea = area;
+        }
+    });
+
+    if (tvbroAutoplayEnabled && !playing && best) {
+        tvbroTryAutoplay(best);
+    }
+}
+
+document.addEventListener("playing", e => {
+    const info = tvbroAutoplayInfo.get(e.target);
+    if (info) info.played = true;
+}, true);
+
+document.addEventListener("pause", e => {
+    const v = e.target;
+    const info = tvbroAutoplayInfo.get(v);
+
+    if (!momNativeInlineActive && info && info.played && !v.ended) {
+        info.userPaused = true;
+    }
+}, true);
+
+document.addEventListener("loadstart", e => {
+    const info = tvbroAutoplayInfo.get(e.target);
+
+    if (info) {
+        info.attempts = 0;
+        info.overlayClicks = 0;
+        info.played = false;
+        info.userPaused = false;
+    }
+}, true);
+
+[
+    "loadedmetadata", "loadeddata", "durationchange", "canplay"
+].forEach(name =>
+    document.addEventListener(name, e => {
+        if (e.target && e.target.tagName === "VIDEO") {
+            tvbroAutoplayScan();
+        }
+    }, true)
+);
+
+function tvbroAllowIframe(f) {
+    try {
+        const current = f.getAttribute("allow") || "";
+        const lower = current.toLowerCase();
+        const missing = ["autoplay", "fullscreen"].filter(
+            name => !lower.includes(name)
+        );
+
+        if (missing.length > 0) {
+            f.setAttribute(
+                "allow",
+                (current ? current + "; " : "") + missing.join("; ")
+            );
+        }
+    } catch (_) {}
+}
+
+document.querySelectorAll("iframe").forEach(tvbroAllowIframe);
+
+new MutationObserver(mutations => {
+    mutations.forEach(m =>
+        m.addedNodes.forEach(n => {
+            if (n.nodeType !== 1) return;
+
+            if (n.tagName === "IFRAME") {
+                tvbroAllowIframe(n);
+            } else if (n.getElementsByTagName) {
+                Array.prototype.forEach.call(
+                    n.getElementsByTagName("iframe"),
+                    tvbroAllowIframe
+                );
+            }
+        })
+    );
+}).observe(document, { childList: true, subtree: true });
