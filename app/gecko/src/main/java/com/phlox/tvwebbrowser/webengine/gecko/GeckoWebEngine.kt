@@ -1,4 +1,3 @@
-
 package com.phlox.tvwebbrowser.webengine.gecko
 
 import android.content.Context
@@ -56,19 +55,23 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
     companion object {
         const val ENGINE_NAME = "GeckoView"
-        private const val APP_WEB_EXTENSION_VERSION = 62
-        private const val ADGUARD_DNS_URL = "https://dns.adguard-dns.com/dns-query"
+        private const val APP_WEB_EXTENSION_VERSION = 63
+        private const val ADGUARD_DNS_URL =
+            "https://dns.adguard-dns.com/dns-query"
 
         val TAG: String = GeckoWebEngine::class.java.simpleName
         lateinit var runtime: GeckoRuntime
         var appWebExtension = ObservableValue<WebExtension?>(null)
-        // true once the extension's background script is running (it swaps in the bundled home page)
-        @Volatile var extensionBackgroundReady = false
-        // the callback of the tab that is on screen; the background script's ad checks use it (see
-        // AppWebExtensionBackgroundPortDelegate), whichever tab created that port
-        @Volatile var activeCallback: WebEngineWindowProviderCallback? = null
-        var weakRefToSingleGeckoView: WeakReference<GeckoViewWithVirtualCursor?> =
-            WeakReference(null)
+
+        @Volatile
+        var extensionBackgroundReady = false
+
+        @Volatile
+        var activeCallback: WebEngineWindowProviderCallback? = null
+
+        var weakRefToSingleGeckoView:
+            WeakReference<GeckoViewWithVirtualCursor?> = WeakReference(null)
+
         val uiHandler = Handler(Looper.getMainLooper())
 
         @UiThread
@@ -78,13 +81,14 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
                 builder.aboutConfigEnabled(true)
                     .preferredColorScheme(
-                        AppContext.provideConfig().theme.value.toGeckoPreferredColorScheme()
+                        AppContext.provideConfig()
+                            .theme.value.toGeckoPreferredColorScheme()
                     )
                     .forceUserScalableEnabled(true)
-                    // Always use AdGuard DNS-over-HTTPS.
-                    // TRR_MODE_ONLY prevents fallback to the TV or router's DNS resolver.
                     .trustedRecursiveResolverUri(ADGUARD_DNS_URL)
-                    .trustedRecursiveResolverMode(GeckoRuntimeSettings.TRR_MODE_ONLY)
+                    .trustedRecursiveResolverMode(
+                        GeckoRuntimeSettings.TRR_MODE_ONLY
+                    )
 
                 builder.contentBlocking(
                     ContentBlocking.Settings.Builder()
@@ -92,12 +96,18 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                             ContentBlocking.AntiTracking.DEFAULT or
                                 ContentBlocking.AntiTracking.STP
                         )
-                        .safeBrowsing(ContentBlocking.SafeBrowsing.DEFAULT)
-                        .cookieBehavior(ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS)
+                        .safeBrowsing(
+                            ContentBlocking.SafeBrowsing.DEFAULT
+                        )
+                        .cookieBehavior(
+                            ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS
+                        )
                         .cookieBehaviorPrivateMode(
                             ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS
                         )
-                        .enhancedTrackingProtectionLevel(ContentBlocking.EtpLevel.DEFAULT)
+                        .enhancedTrackingProtectionLevel(
+                            ContentBlocking.EtpLevel.DEFAULT
+                        )
                         .build()
                 )
 
@@ -123,9 +133,11 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                     AppContext.provideConfig().appWebExtensionVersion =
                         APP_WEB_EXTENSION_VERSION
                 }) { error ->
-                    // Upstream TV Bro 3.x reports extension initialization failures.
-                    // Keep the existing extension and homepage behavior unchanged.
-                    Log.e(TAG, "Unable to initialize bundled browser extension", error)
+                    Log.e(
+                        TAG,
+                        "Unable to initialize bundled browser extension",
+                        error
+                    )
                 }
             }
 
@@ -133,34 +145,52 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
             webViewContainer.addView(webView)
             weakRefToSingleGeckoView = WeakReference(webView)
             webViewContainer.setWillNotDraw(true)
-            // Use it only as a container; cursor will be drawn on the WebView itself.
         }
 
-        /**
-         * Without a hardware AV1 decoder GeckoView decodes AV1 in software (dav1d), which TV chips can not do
-         * smoothly, and sites still choose it (YouTube serves AV1 to Firefox): pages are told there is no AV1,
-         * so they choose VP9 or H.264, which the hardware decodes. (Same fix as upstream TV Bro; the preference
-         * is set through reflection so an older GeckoView without this API only logs a warning.)
-         */
         private fun disableSoftwareAv1() {
             try {
-                if (com.phlox.tvwebbrowser.utils.HardwareCodecs.hasHardwareDecoder(
-                        com.phlox.tvwebbrowser.utils.HardwareCodecs.AV1)) {
-                    Log.i(TAG, "Hardware AV1 decoder detected; leaving AV1 enabled")
+                if (com.phlox.tvwebbrowser.utils.HardwareCodecs
+                        .hasHardwareDecoder(
+                            com.phlox.tvwebbrowser.utils.HardwareCodecs.AV1
+                        )
+                ) {
+                    Log.i(
+                        TAG,
+                        "Hardware AV1 decoder detected; leaving AV1 enabled"
+                    )
                     return
                 }
-                Log.i(TAG, "No usable hardware AV1 decoder; attempting to disable software AV1")
-                val controller = Class.forName("org.mozilla.geckoview.GeckoPreferenceController")
-                val branch = controller.getField("PREF_BRANCH_DEFAULT").getInt(null)
+
+                Log.i(
+                    TAG,
+                    "No usable hardware AV1 decoder; attempting to disable software AV1"
+                )
+
+                val controller = Class.forName(
+                    "org.mozilla.geckoview.GeckoPreferenceController"
+                )
+
+                val branch = controller
+                    .getField("PREF_BRANCH_DEFAULT")
+                    .getInt(null)
+
                 val method = controller.methods.firstOrNull {
-                    it.name == "setGeckoPref" && it.parameterTypes.size == 3 &&
-                        (it.parameterTypes[1] == Boolean::class.javaPrimitiveType ||
-                         it.parameterTypes[1] == Boolean::class.javaObjectType)
+                    it.name == "setGeckoPref" &&
+                        it.parameterTypes.size == 3 &&
+                        (it.parameterTypes[1] ==
+                            Boolean::class.javaPrimitiveType ||
+                         it.parameterTypes[1] ==
+                            Boolean::class.javaObjectType)
                 }
+
                 if (method == null) {
-                    Log.w(TAG, "GeckoPreferenceController.setGeckoPref not found: AV1 stays on")
+                    Log.w(
+                        TAG,
+                        "GeckoPreferenceController.setGeckoPref not found: AV1 stays on"
+                    )
                     return
                 }
+
                 method.invoke(null, "media.av1.enabled", false, branch)
                 Log.i(TAG, "AV1 preference update requested")
             } catch (e: Throwable) {
@@ -182,17 +212,24 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                             context: Context,
                             webViewContainer: CursorLayout
                         ) {
-                            GeckoWebEngine.initialize(context, webViewContainer)
+                            GeckoWebEngine.initialize(
+                                context,
+                                webViewContainer
+                            )
                         }
 
-                        override fun createWebEngine(tab: WebTabState): WebEngine {
+                        override fun createWebEngine(
+                            tab: WebTabState
+                        ): WebEngine {
                             return GeckoWebEngine(tab)
                         }
 
                         override suspend fun clearCache(ctx: Context) {
                             suspendCoroutine { cont ->
                                 runtime.storageController
-                                    .clearData(StorageController.ClearFlags.ALL_CACHES)
+                                    .clearData(
+                                        StorageController.ClearFlags.ALL_CACHES
+                                    )
                                     .then({
                                         cont.resume(null)
                                         GeckoResult.fromValue(null)
@@ -203,15 +240,21 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                             }
                         }
 
-                        override fun onThemeSettingUpdated(value: Config.Theme) {
+                        override fun onThemeSettingUpdated(
+                            value: Config.Theme
+                        ) {
                             GeckoWebEngine.onThemeSettingUpdated(value)
                         }
 
                         override fun getWebEngineVersionString(): String {
-                            return org.mozilla.geckoview.BuildConfig.LIBRARY_PACKAGE_NAME + ":" +
-                                org.mozilla.geckoview.BuildConfig.MOZ_APP_VERSION + "." +
-                                org.mozilla.geckoview.BuildConfig.MOZ_APP_BUILDID + " - " +
-                                org.mozilla.geckoview.BuildConfig.MOZ_UPDATE_CHANNEL
+                            return org.mozilla.geckoview.BuildConfig
+                                .LIBRARY_PACKAGE_NAME + ":" +
+                                org.mozilla.geckoview.BuildConfig
+                                    .MOZ_APP_VERSION + "." +
+                                org.mozilla.geckoview.BuildConfig
+                                    .MOZ_APP_BUILDID + " - " +
+                                org.mozilla.geckoview.BuildConfig
+                                    .MOZ_UPDATE_CHANNEL
                         }
                     }
                 )
@@ -222,6 +265,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     private var webView: GeckoViewWithVirtualCursor? = null
     lateinit var session: GeckoSession
     var callback: WebEngineWindowProviderCallback? = null
+
     val navigationDelegate = MyNavigationDelegate(this)
     val progressDelegate = MyProgressDelegate(this)
     val promptDelegate = MyPromptDelegate(this)
@@ -231,13 +275,21 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     val contentBlockingDelegate = MyContentBlockingDelegate(this)
     val mediaSessionDelegate = MyMediaSessionDelegate()
     val selectionActionDelegate = MySelectionActionDelegate()
-    var appHomeContentScriptPortDelegate: AppHomeContentScriptPortDelegate? = null
-    var appContentScriptPortDelegate: AppContentScriptPortDelegate? = null
-    private val contentPortDelegates = mutableSetOf<AppContentScriptPortDelegate>()
+
+    var appHomeContentScriptPortDelegate:
+        AppHomeContentScriptPortDelegate? = null
+
+    var appContentScriptPortDelegate:
+        AppContentScriptPortDelegate? = null
+
+    private val contentPortDelegates =
+        mutableSetOf<AppContentScriptPortDelegate>()
+
     private var lastReportedVideoPresence = false
 
     fun onContentVideoStateChanged() {
         val present = contentPortDelegates.any { it.hasVideo }
+
         if (present != lastReportedVideoPresence) {
             lastReportedVideoPresence = present
             callback?.onVideoPresenceChanged(present)
@@ -245,21 +297,36 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     }
 
     override fun setNativeInlinePlayback(active: Boolean) {
-        val msg = JSONObject().put("type", "nativeInlinePlayback").put("active", active)
+        val msg = JSONObject()
+            .put("type", "nativeInlinePlayback")
+            .put("active", active)
+
         uiHandler.post {
             for (delegate in contentPortDelegates.toList()) {
-                try { delegate.port.postMessage(msg) }
-                catch (e: Exception) { Log.w(TAG, "Unable to notify HTML video", e) }
+                try {
+                    delegate.port.postMessage(msg)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Unable to notify HTML video", e)
+                }
             }
         }
     }
 
-    fun onContentPortDisconnected(delegate: AppContentScriptPortDelegate) {
+    fun onContentPortDisconnected(
+        delegate: AppContentScriptPortDelegate
+    ) {
         contentPortDelegates.remove(delegate)
-        if (appContentScriptPortDelegate === delegate) appContentScriptPortDelegate = null
+
+        if (appContentScriptPortDelegate === delegate) {
+            appContentScriptPortDelegate = null
+        }
+
         onContentVideoStateChanged()
     }
-    var appWebExtensionBackgroundPortDelegate: AppWebExtensionBackgroundPortDelegate? = null
+
+    var appWebExtensionBackgroundPortDelegate:
+        AppWebExtensionBackgroundPortDelegate? = null
+
     private lateinit var webExtObserver: (WebExtension?) -> Unit
 
     override val url: String?
@@ -274,11 +341,18 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     init {
         session = GeckoSession(
             GeckoSessionSettings.Builder()
-                .usePrivateMode(AppContext.provideConfig().incognitoMode)
-                .viewportMode(GeckoSessionSettings.VIEWPORT_MODE_MOBILE)
-                .userAgentMode(GeckoSessionSettings.USER_AGENT_MODE_MOBILE)
+                .usePrivateMode(
+                    AppContext.provideConfig().incognitoMode
+                )
+                .viewportMode(
+                    GeckoSessionSettings.VIEWPORT_MODE_MOBILE
+                )
+                .userAgentMode(
+                    GeckoSessionSettings.USER_AGENT_MODE_MOBILE
+                )
                 .useTrackingProtection(
-                    tab.adblock ?: AppContext.provideConfig().adBlockEnabled
+                    tab.adblock ?:
+                        AppContext.provideConfig().adBlockEnabled
                 )
                 .build()
         )
@@ -298,9 +372,11 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 uiHandler.post {
                     connectToAppWebExtension(ext)
                 }
+
                 appWebExtension.unsubscribe(webExtObserver)
             }
         }
+
         appWebExtension.subscribe(webExtObserver)
     }
 
@@ -318,7 +394,10 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
                 override fun onConnect(port: WebExtension.Port) {
                     appContentScriptPortDelegate =
-                        AppContentScriptPortDelegate(port, this@GeckoWebEngine).also {
+                        AppContentScriptPortDelegate(
+                            port,
+                            this@GeckoWebEngine
+                        ).also {
                             contentPortDelegates.add(it)
                             port.setDelegate(it)
                         }
@@ -340,7 +419,10 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
                 override fun onConnect(port: WebExtension.Port) {
                     appHomeContentScriptPortDelegate =
-                        AppHomeContentScriptPortDelegate(port, this@GeckoWebEngine).also {
+                        AppHomeContentScriptPortDelegate(
+                            port,
+                            this@GeckoWebEngine
+                        ).also {
                             port.setDelegate(it)
                         }
                 }
@@ -360,6 +442,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
                 override fun onConnect(port: WebExtension.Port) {
                     extensionBackgroundReady = true
+
                     appWebExtensionBackgroundPortDelegate =
                         AppWebExtensionBackgroundPortDelegate(
                             port,
@@ -379,20 +462,28 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         progressDelegate.sessionState?.let {
             return it
         }
+
         return null
     }
 
     override fun restoreState(savedInstanceState: Any) {
         if (savedInstanceState is SessionState) {
             progressDelegate.sessionState = savedInstanceState
+
             if (!session.isOpen) {
                 session.open(runtime)
             }
+
             session.restoreState(savedInstanceState)
             homeLoadToken++
-            if (!extensionBackgroundReady) reloadHomePageOnceExtensionReady(homeLoadToken)
+
+            if (!extensionBackgroundReady) {
+                reloadHomePageOnceExtensionReady(homeLoadToken)
+            }
         } else {
-            throw IllegalArgumentException("savedInstanceState is not SessionState")
+            throw IllegalArgumentException(
+                "savedInstanceState is not SessionState"
+            )
         }
     }
 
@@ -405,46 +496,77 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 
     private fun isHomePageUrl(u: String?): Boolean {
         return u != null &&
-            u.substringBefore('#').substringBefore('?').trimEnd('/') == Config.HOME_PAGE_URL.trimEnd('/')
+            u.substringBefore('#')
+                .substringBefore('?')
+                .trimEnd('/') ==
+            Config.HOME_PAGE_URL.trimEnd('/')
     }
 
-    /**
-     * The bundled homepage depends on the extension background script. On a cold
-     * launch, wait for both that script and a measured, attached GeckoView.
-     * Do not force a homepage load after five seconds if initialization stalls.
-     */
-    private fun loadHomePageWhenExtensionReady(token: Int, attempt: Int = 0) {
+    private fun loadHomePageWhenExtensionReady(
+        token: Int,
+        attempt: Int = 0
+    ) {
         if (token != homeLoadToken || !session.isOpen) return
+
         val view = webView
-        if (extensionBackgroundReady && view != null && view.isAttachedToWindow &&
-            view.width > 0 && view.height > 0) {
-            // Run on the view queue, after the current layout pass.
+
+        if (extensionBackgroundReady &&
+            view != null &&
+            view.isAttachedToWindow &&
+            view.width > 0 &&
+            view.height > 0
+        ) {
             view.post {
-                if (token == homeLoadToken && session.isOpen && extensionBackgroundReady &&
-                    view.isAttachedToWindow && view.width > 0 && view.height > 0) {
+                if (token == homeLoadToken &&
+                    session.isOpen &&
+                    extensionBackgroundReady &&
+                    view.isAttachedToWindow &&
+                    view.width > 0 &&
+                    view.height > 0
+                ) {
                     session.loadUri(Config.HOME_PAGE_URL)
                 }
             }
         } else if (attempt < 75) {
-            uiHandler.postDelayed({ loadHomePageWhenExtensionReady(token, attempt + 1) }, 200L)
+            uiHandler.postDelayed({
+                loadHomePageWhenExtensionReady(token, attempt + 1)
+            }, 200L)
         } else {
-            Log.e(TAG, "Homepage not ready after 15 seconds; not forcing premature load")
+            Log.e(
+                TAG,
+                "Homepage not ready after 15 seconds; not forcing premature load"
+            )
         }
     }
 
-    /** Reload a restored homepage only after extension and display are ready. */
-    private fun reloadHomePageOnceExtensionReady(token: Int, attempt: Int = 0) {
+    private fun reloadHomePageOnceExtensionReady(
+        token: Int,
+        attempt: Int = 0
+    ) {
         if (token != homeLoadToken || !session.isOpen) return
+
         val view = webView
-        if (extensionBackgroundReady && view != null && view.isAttachedToWindow &&
-            view.width > 0 && view.height > 0) {
+
+        if (extensionBackgroundReady &&
+            view != null &&
+            view.isAttachedToWindow &&
+            view.width > 0 &&
+            view.height > 0
+        ) {
             view.post {
-                if (token == homeLoadToken && session.isOpen && isHomePageUrl(url)) {
-                    session.reload(GeckoSession.LOAD_FLAGS_BYPASS_CACHE)
+                if (token == homeLoadToken &&
+                    session.isOpen &&
+                    isHomePageUrl(url)
+                ) {
+                    session.reload(
+                        GeckoSession.LOAD_FLAGS_BYPASS_CACHE
+                    )
                 }
             }
         } else if (attempt < 75) {
-            uiHandler.postDelayed({ reloadHomePageOnceExtensionReady(token, attempt + 1) }, 200L)
+            uiHandler.postDelayed({
+                reloadHomePageOnceExtensionReady(token, attempt + 1)
+            }, 200L)
         }
     }
 
@@ -452,17 +574,20 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         if (!session.isOpen) {
             session.open(runtime)
         }
+
         homeLoadToken++
 
         if (Config.HOME_URL_ALIAS == url) {
             when (AppContext.provideConfig().homePageMode) {
                 Config.HomePageMode.BLANK -> {
-                    // Nothing to do.
+                    // Nothing to load.
                 }
 
                 Config.HomePageMode.CUSTOM,
                 Config.HomePageMode.SEARCH_ENGINE -> {
-                    session.loadUri(AppContext.provideConfig().homePage)
+                    session.loadUri(
+                        AppContext.provideConfig().homePage
+                    )
                 }
 
                 Config.HomePageMode.HOME_PAGE -> {
@@ -506,7 +631,6 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     }
 
     override fun setNetworkAvailable(connected: Boolean) {
-        // No operation.
     }
 
     override fun getView(): View? {
@@ -516,6 +640,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     override fun getOrCreateView(activityContext: Context): View {
         if (webView == null) {
             val geckoView = weakRefToSingleGeckoView.get()
+
             webView = if (geckoView == null) {
                 val wv = GeckoViewWithVirtualCursor(activityContext)
                 weakRefToSingleGeckoView = WeakReference(wv)
@@ -526,6 +651,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
                 wv.cursorDrawerDelegate.callback = this
             }
         }
+
         return webView!!
     }
 
@@ -538,10 +664,13 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     }
 
     override fun reload() {
-        val adblockEnabled = tab.adblock ?: AppContext.provideConfig().adBlockEnabled
+        val adblockEnabled =
+            tab.adblock ?: AppContext.provideConfig().adBlockEnabled
+
         if (session.settings.useTrackingProtection != adblockEnabled) {
             session.settings.useTrackingProtection = adblockEnabled
         }
+
         session.reload()
     }
 
@@ -552,15 +681,18 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     override fun onResume() {
         if (!session.isOpen) {
             session.open(runtime)
+
             progressDelegate.sessionState?.let {
                 session.restoreState(it)
             }
         }
+
         session.setFocused(true)
     }
 
     override fun onPause() {
         session.setFocused(false)
+
         mediaSessionDelegate.mediaSession?.let {
             if (!mediaSessionDelegate.paused) {
                 it.pause()
@@ -607,7 +739,10 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
     ) {
         this.callback = callback
         activeCallback = callback
-        val webView = this.webView ?: throw IllegalStateException("WebView is null")
+
+        val webView = this.webView
+            ?: throw IllegalStateException("WebView is null")
+
         val previousSession = webView.session
 
         if (previousSession != null && previousSession != session) {
@@ -615,26 +750,46 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
             webView.releaseSession()
         }
 
-        // Restore the pre-Phase-3 first-paint cover on every attachment.
-        val isNightMode = (callback.getActivity().resources.configuration.uiMode and
-                Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        webView.coverUntilFirstPaint(if (isNightMode) 0xFF1B1B1B.toInt() else 0xFFE4E2DD.toInt())
+        val isNightMode =
+            (callback.getActivity().resources.configuration.uiMode and
+                Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+
+        webView.coverUntilFirstPaint(
+            if (isNightMode) {
+                0xFF1B1B1B.toInt()
+            } else {
+                0xFFE4E2DD.toInt()
+            }
+        )
+
         webView.setSession(session)
 
-        if (session.isOpen && previousSession != null && previousSession != session) {
+        if (session.isOpen &&
+            previousSession != null &&
+            previousSession != session
+        ) {
             session.setActive(true)
             session.reload()
         }
     }
 
-    override fun onDetachFromWindow(completely: Boolean, destroyTab: Boolean) {
+    override fun onDetachFromWindow(
+        completely: Boolean,
+        destroyTab: Boolean
+    ) {
         val detachingCallback = callback
-        if (activeCallback === detachingCallback) activeCallback = null
+
+        if (activeCallback === detachingCallback) {
+            activeCallback = null
+        }
+
         callback = null
         val webView = this.webView
 
         if (webView != null) {
             val session = webView.session
+
             if (session == this.session) {
                 session.setActive(false)
                 webView.releaseSession()
@@ -646,7 +801,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         }
 
         if (destroyTab) {
-            homeLoadToken++ // cancels home page loads that are still waiting
+            homeLoadToken++
             mediaSessionDelegate.mediaSession?.stop()
             session.close()
         }
@@ -672,13 +827,14 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         )
     }
 
-    override fun isSameSession(internalRepresentation: Any): Boolean {
-        return internalRepresentation is GeckoSession && internalRepresentation == session
+    override fun isSameSession(
+        internalRepresentation: Any
+    ): Boolean {
+        return internalRepresentation is GeckoSession &&
+            internalRepresentation == session
     }
 
     override fun onLongPress(x: Int, y: Int) {
-        // There is a small delay so that if MyContentDelegate.onContextMenu
-        // (with more contextual data) is triggered first, this call will be ignored.
         uiHandler.postDelayed(
             {
                 callback?.onContextMenu(
@@ -705,6 +861,7 @@ class GeckoWebEngine(val tab: WebTabState) : WebEngine,
         if (enabled) {
             webView?.cursorDrawerDelegate?.animateAppearing()
         }
+
         webView?.virtualCursorMode = enabled
     }
 
