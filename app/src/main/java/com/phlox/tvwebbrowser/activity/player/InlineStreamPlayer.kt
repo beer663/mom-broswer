@@ -34,11 +34,6 @@ import com.phlox.tvwebbrowser.widgets.cursor.CursorDrawerDelegate
 import java.util.Locale
 import kotlin.math.roundToInt
 
-/**
- * Renders HLS/DASH in an Android overlay positioned over a GeckoView HTML video.
- * This does NOT embed ExoPlayer in the DOM. Back hides the overlay so users can
- * pick another streaming server. DRM/cookie-protected streams may fail.
- */
 class InlineStreamPlayer(
     private val activity: AppCompatActivity,
     private val root: RelativeLayout,
@@ -48,22 +43,31 @@ class InlineStreamPlayer(
 ) {
     private companion object {
         const val TAG = "MomBrowserMedia3"
-        // Some live-TV hosts take much longer than 15 seconds to connect.
         const val STARTUP_TIMEOUT_MS = 120_000L
-        // Only applies AFTER the stream has reached READY at least once.
         const val REBUFFER_TIMEOUT_MS = 90_000L
     }
+
     private data class Box(
-        val frameUrl: String, val x: Double, val y: Double,
-        val width: Double, val height: Double,
-        val viewportWidth: Double, val viewportHeight: Double,
+        val frameUrl: String,
+        val x: Double,
+        val y: Double,
+        val width: Double,
+        val height: Double,
+        val viewportWidth: Double,
+        val viewportHeight: Double,
         val updated: Long
     )
-    private data class Request(val url: String, val origin: String, val userAgent: String?)
+
+    private data class Request(
+        val url: String,
+        val origin: String,
+        val userAgent: String?
+    )
 
     private val handler = Handler(Looper.getMainLooper())
     private val boxes = mutableMapOf<String, Box>()
     private val cooldown = mutableMapOf<String, Long>()
+
     private var pending: Request? = null
     private var pendingReadyAt = 0L
     private var current: Request? = null
@@ -79,31 +83,34 @@ class InlineStreamPlayer(
     private var timeout: Runnable? = null
     private var bufferingTimeout: Runnable? = null
     private var attemptedBufferingRecovery = false
+
     private val startPending = Runnable { startIfPositioned() }
 
-    // The page's virtual cursor sends its clicks to GeckoView only, so it cannot press the
-    // Unmute / Full screen button. This hook lets the cursor click it WITHOUT the button
-    // taking keyboard focus (which used to make the cursor stop responding to the remote).
     private var consumingCursorTouch = false
-
-    // The page's cursor is drawn on the web view, which is underneath this overlay, so it would
-    // vanish over the video. Draw it again on top of the player.
     private var cursorDelegate: CursorDrawerDelegate? = null
     private var lastCursorX = Float.NaN
     private var lastCursorY = Float.NaN
     private var lastCursorVisible = false
 
-    // The page may redraw 60 times/sec for an animated banner. Do not redraw
-    // Media3 on every page frame: only when the cursor actually changes.
     private val cursorRedrawHook: (CursorDrawerDelegate) -> Unit = { delegate ->
         val host = holder
-        if (host != null && host.isShown && ready && !menuVisible &&
-            delegate.surface === webView()) {
+
+        if (host != null &&
+            host.isShown &&
+            ready &&
+            !menuVisible &&
+            delegate.surface === webView()
+        ) {
             cursorDelegate = delegate
+
             val x = delegate.cursorPosition.x
             val y = delegate.cursorPosition.y
             val visible = delegate.isCursorVisibleForOverlay()
-            if (x != lastCursorX || y != lastCursorY || visible != lastCursorVisible) {
+
+            if (x != lastCursorX ||
+                y != lastCursorY ||
+                visible != lastCursorVisible
+            ) {
                 lastCursorX = x
                 lastCursorY = y
                 lastCursorVisible = visible
@@ -116,32 +123,63 @@ class InlineStreamPlayer(
         val delegate = cursorDelegate ?: return
         val hLoc = IntArray(2)
         val wLoc = IntArray(2)
+
         host.getLocationOnScreen(hLoc)
         delegate.surface.getLocationOnScreen(wLoc)
+
         val cx = wLoc[0] + delegate.cursorPosition.x - hLoc[0]
         val cy = wLoc[1] + delegate.cursorPosition.y - hLoc[1]
-        if (cx < 0f || cy < 0f || cx > host.width || cy > host.height) return
+
+        if (cx < 0f ||
+            cy < 0f ||
+            cx > host.width ||
+            cy > host.height
+        ) return
+
         delegate.drawCursorAt(canvas, cx, cy)
     }
 
-    private fun cursorOverButton(web: View, x: Float, y: Float): Boolean {
+    private fun cursorOverButton(
+        web: View,
+        x: Float,
+        y: Float
+    ): Boolean {
         val b = button ?: return false
         val host = holder ?: return false
-        // Only the currently active webpage's cursor can control this button.
-        if (web !== webView() || !ready || menuVisible || !host.isShown || fullscreen ||
-            b.visibility != View.VISIBLE || b.width <= 0 || b.height <= 0) return false
+
+        if (web !== webView() ||
+            !ready ||
+            menuVisible ||
+            !host.isShown ||
+            fullscreen ||
+            b.visibility != View.VISIBLE ||
+            b.width <= 0 ||
+            b.height <= 0
+        ) return false
+
         val bLoc = IntArray(2)
         val wLoc = IntArray(2)
+
         b.getLocationOnScreen(bLoc)
         web.getLocationOnScreen(wLoc)
+
         val sx = wLoc[0] + x
         val sy = wLoc[1] + y
-        return sx >= bLoc[0] && sx <= bLoc[0] + b.width && sy >= bLoc[1] && sy <= bLoc[1] + b.height
+
+        return sx >= bLoc[0] &&
+            sx <= bLoc[0] + b.width &&
+            sy >= bLoc[1] &&
+            sy <= bLoc[1] + b.height
     }
 
-    private val cursorInterceptor: (View, Float, Float, Int) -> Boolean = { web, x, y, action ->
-        // Never consume touches from another tab, Android menus, or a closed player.
-        if (web !== webView() || !ready || menuVisible || holder?.isShown != true) {
+    private val cursorInterceptor:
+        (View, Float, Float, Int) -> Boolean = { web, x, y, action ->
+
+        if (web !== webView() ||
+            !ready ||
+            menuVisible ||
+            holder?.isShown != true
+        ) {
             consumingCursorTouch = false
             false
         } else when (action) {
@@ -149,57 +187,100 @@ class InlineStreamPlayer(
                 consumingCursorTouch = cursorOverButton(web, x, y)
                 consumingCursorTouch
             }
+
             MotionEvent.ACTION_MOVE -> consumingCursorTouch
+
             MotionEvent.ACTION_UP -> {
                 val consumed = consumingCursorTouch
                 consumingCursorTouch = false
+
                 if (consumed && cursorOverButton(web, x, y)) {
-                    button?.let { b -> b.post { b.performClick() } }
+                    button?.let { b ->
+                        b.post { b.performClick() }
+                    }
                 }
+
                 consumed
             }
+
             MotionEvent.ACTION_CANCEL -> {
                 val consumed = consumingCursorTouch
                 consumingCursorTouch = false
                 consumed
             }
+
             else -> false
         }
     }
 
-    private fun dp(value: Int) = (value * activity.resources.displayMetrics.density + .5f).toInt()
+    private fun dp(value: Int) =
+        (value * activity.resources.displayMetrics.density + .5f).toInt()
+
     private fun isPlaylist(url: String): Boolean {
         val uri = Uri.parse(url)
         if (uri.scheme != "http" && uri.scheme != "https") return false
+
         val path = uri.path?.lowercase(Locale.ROOT) ?: return false
         return path.endsWith(".m3u8") || path.endsWith(".mpd")
     }
 
-    fun detect(url: String, origin: String, userAgent: String?) {
+    fun detect(
+        url: String,
+        origin: String,
+        userAgent: String?
+    ) {
         if (!isPlaylist(url)) return
+
         val now = SystemClock.uptimeMillis()
         if ((cooldown[url] ?: 0L) > now) return
         if (current?.url == url || pending?.url == url) return
+
         pending = Request(url, origin, userAgent)
         pendingReadyAt = now + 750L
+
         handler.removeCallbacks(startPending)
-        // A site can fetch several alternative playlists in succession.
-        // Use the most recent, and wait briefly for its video position.
         handler.postDelayed(startPending, 750L)
     }
 
-    fun updateRect(frameUrl: String, x: Double, y: Double, width: Double, height: Double,
-                   viewportWidth: Double, viewportHeight: Double) {
-        val values = doubleArrayOf(x, y, width, height, viewportWidth, viewportHeight)
+    fun updateRect(
+        frameUrl: String,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        viewportWidth: Double,
+        viewportHeight: Double
+    ) {
+        val values = doubleArrayOf(
+            x, y, width, height, viewportWidth, viewportHeight
+        )
+
         if (values.any { it.isNaN() || it.isInfinite() } ||
-            viewportWidth < 100 || viewportHeight < 80 || width < 50 || height < 40 ||
-            frameUrl.length > 2048) return
-        boxes[frameUrl] = Box(frameUrl, x, y, width, height, viewportWidth, viewportHeight,
-                              SystemClock.uptimeMillis())
-        if (current != null && !fullscreen) bestBox(current!!)?.let { position(it) }
-        // Never postpone the start timer on every rectangle report: moving
-        // banners can otherwise keep rescheduling playback indefinitely.
-        if (pending != null && SystemClock.uptimeMillis() >= pendingReadyAt) {
+            viewportWidth < 100 ||
+            viewportHeight < 80 ||
+            width < 50 ||
+            height < 40 ||
+            frameUrl.length > 2048
+        ) return
+
+        boxes[frameUrl] = Box(
+            frameUrl,
+            x,
+            y,
+            width,
+            height,
+            viewportWidth,
+            viewportHeight,
+            SystemClock.uptimeMillis()
+        )
+
+        if (current != null && !fullscreen) {
+            bestBox(current!!)?.let { position(it) }
+        }
+
+        if (pending != null &&
+            SystemClock.uptimeMillis() >= pendingReadyAt
+        ) {
             handler.removeCallbacks(startPending)
             handler.post(startPending)
         }
@@ -207,24 +288,48 @@ class InlineStreamPlayer(
 
     private fun bestBox(request: Request): Box? {
         val now = SystemClock.uptimeMillis()
-        val originUri = runCatching { Uri.parse(request.origin) }.getOrNull()
-        val match = boxes.values.filter { now - it.updated < 6500L }
-        if (match.isEmpty()) return null
-        fun score(b: Box): Double {
-            val frameUri = runCatching { Uri.parse(b.frameUrl) }.getOrNull()
-            val exact = request.origin.isNotBlank() &&
-                b.frameUrl.substringBefore('#') == request.origin.substringBefore('#')
-            val sameHost = originUri?.host != null && originUri.host == frameUri?.host
-            val area = (b.width * b.height) / (b.viewportWidth * b.viewportHeight)
-            return area + if (exact) 10.0 else if (sameHost) 5.0 else 0.0
+        val originUri = runCatching {
+            Uri.parse(request.origin)
+        }.getOrNull()
+
+        val match = boxes.values.filter {
+            now - it.updated < 6500L
         }
+
+        if (match.isEmpty()) return null
+
+        fun score(b: Box): Double {
+            val frameUri = runCatching {
+                Uri.parse(b.frameUrl)
+            }.getOrNull()
+
+            val exact = request.origin.isNotBlank() &&
+                b.frameUrl.substringBefore('#') ==
+                request.origin.substringBefore('#')
+
+            val sameHost = originUri?.host != null &&
+                originUri.host == frameUri?.host
+
+            val area =
+                (b.width * b.height) /
+                (b.viewportWidth * b.viewportHeight)
+
+            return area +
+                if (exact) 10.0 else if (sameHost) 5.0 else 0.0
+        }
+
         return match.maxByOrNull { score(it) }
     }
 
     private fun startIfPositioned() {
         val req = pending ?: return
-        val box = bestBox(req) ?: return // no DOM video; do not force fullscreen
-        if (current?.url == req.url) { pending = null; return }
+        val box = bestBox(req) ?: return
+
+        if (current?.url == req.url) {
+            pending = null
+            return
+        }
+
         pending = null
         close(suppressCurrent = false)
         current = req
@@ -244,9 +349,15 @@ class InlineStreamPlayer(
             elevation = dp(12).toFloat()
             isFocusable = false
         }
+
         holder = host
-        val video = LayoutInflater.from(activity).inflate(R.layout.view_inline_stream_player, host, false)
-            as PlayerView
+
+        val video = LayoutInflater.from(activity).inflate(
+            R.layout.view_inline_stream_player,
+            host,
+            false
+        ) as PlayerView
+
         playerView = video
         host.addView(video, FrameLayout.LayoutParams(-1, -1))
 
@@ -255,14 +366,23 @@ class InlineStreamPlayer(
             isAllCaps = false
             setTextColor(Color.WHITE)
             textSize = 13f
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            typeface = Typeface.create(
+                "sans-serif-medium",
+                Typeface.NORMAL
+            )
+
             background = GradientDrawable().apply {
                 setColor(Color.rgb(48, 54, 61))
                 cornerRadius = dp(26).toFloat()
-                setStroke(dp(1), Color.rgb(216, 222, 232))
+                setStroke(
+                    dp(1),
+                    Color.rgb(216, 222, 232)
+                )
             }
+
             isFocusable = false
             isFocusableInTouchMode = false
+
             setOnClickListener {
                 if (muted) {
                     muted = false
@@ -270,192 +390,393 @@ class InlineStreamPlayer(
                     text = "Full screen"
                 } else {
                     fullscreen = true
-                    oldUiFlags = activity.window.decorView.systemUiVisibility
+                    oldUiFlags =
+                        activity.window.decorView.systemUiVisibility
+
                     @Suppress("DEPRECATION")
                     activity.window.decorView.systemUiVisibility =
-                        (View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                         or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                         or View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+                        (View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                            View.SYSTEM_UI_FLAG_FULLSCREEN or
+                            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+
                     position(box)
-                    root.post { if (fullscreen) position(box) }
+
+                    root.post {
+                        if (fullscreen) position(box)
+                    }
+
                     visibility = View.GONE
                 }
             }
         }
+
         button = control
-        host.addView(control, FrameLayout.LayoutParams(dp(124), dp(48), Gravity.TOP or Gravity.LEFT).apply {
-            leftMargin = dp(8); topMargin = dp(8)
-        })
-        root.addView(host, RelativeLayout.LayoutParams(dp(200), dp(120)))
-        host.visibility = View.INVISIBLE // website remains visible while native player buffers
+
+        host.addView(
+            control,
+            FrameLayout.LayoutParams(
+                dp(124),
+                dp(48),
+                Gravity.TOP or Gravity.LEFT
+            ).apply {
+                leftMargin = dp(8)
+                topMargin = dp(8)
+            }
+        )
+
+        root.addView(
+            host,
+            RelativeLayout.LayoutParams(dp(200), dp(120))
+        )
+
+        host.visibility = View.INVISIBLE
         position(box)
 
         val headers = mutableMapOf<String, String>()
-        if (req.origin.startsWith("http://") || req.origin.startsWith("https://")) {
+
+        if (req.origin.startsWith("http://") ||
+            req.origin.startsWith("https://")
+        ) {
             headers["Referer"] = req.origin
         }
+
         val http = DefaultHttpDataSource.Factory()
-            .setDefaultRequestProperties(headers).setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(60000).setReadTimeoutMs(60000)
-        req.userAgent?.takeIf { it.isNotBlank() }?.let { http.setUserAgent(it) }
-        val factory = DefaultMediaSourceFactory(DefaultDataSource.Factory(activity, http))
-        // Decoder fallback lets Media3 try another decoder when a TV chip's first choice fails.
-        val renderers = DefaultRenderersFactory(activity).setEnableDecoderFallback(true)
-        val p = ExoPlayer.Builder(activity, renderers).setMediaSourceFactory(factory).build()
+            .setDefaultRequestProperties(headers)
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(60000)
+            .setReadTimeoutMs(60000)
+
+        req.userAgent?.takeIf {
+            it.isNotBlank()
+        }?.let {
+            http.setUserAgent(it)
+        }
+
+        val factory = DefaultMediaSourceFactory(
+            DefaultDataSource.Factory(activity, http)
+        )
+
+        val renderers = DefaultRenderersFactory(activity)
+            .setEnableDecoderFallback(true)
+
+        val p = ExoPlayer.Builder(activity, renderers)
+            .setMediaSourceFactory(factory)
+            .build()
+
         exo = p
         video.player = p
-        val mime = if (req.url.substringBefore('?').substringBefore('#').lowercase(Locale.ROOT).endsWith(".mpd"))
-            MimeTypes.APPLICATION_MPD else MimeTypes.APPLICATION_M3U8
+
+        val mime = if (
+            req.url.substringBefore('?')
+                .substringBefore('#')
+                .lowercase(Locale.ROOT)
+                .endsWith(".mpd")
+        ) {
+            MimeTypes.APPLICATION_MPD
+        } else {
+            MimeTypes.APPLICATION_M3U8
+        }
+
         p.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
-                // Also check the player instance: a previous session can report late events.
                 if (current?.url != req.url || exo !== p) return
-                Log.d(TAG, "Media3 state=$state host=${Uri.parse(req.url).host}")
+
+                Log.d(
+                    TAG,
+                    "Media3 state=$state host=${Uri.parse(req.url).host}"
+                )
+
                 when (state) {
                     Player.STATE_READY -> {
                         cancelBufferingTimeout()
+
                         if (!ready) {
                             ready = true
                             cancelTimeout()
-                            host.visibility = if (menuVisible) View.INVISIBLE else View.VISIBLE
-                            // Hook the remote cursor only after native video is ready.
-                            CursorDrawerDelegate.touchInterceptor = cursorInterceptor
-                            CursorDrawerDelegate.overlayRedrawHook = cursorRedrawHook
-                            activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+                            host.visibility =
+                                if (menuVisible) {
+                                    View.INVISIBLE
+                                } else {
+                                    View.VISIBLE
+                                }
+
+                            CursorDrawerDelegate.touchInterceptor =
+                                cursorInterceptor
+
+                            CursorDrawerDelegate.overlayRedrawHook =
+                                cursorRedrawHook
+
+                            activity.window.addFlags(
+                                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                            )
+
                             onActiveChanged(true)
+
+                            // The menu may have opened during buffering.
+                            p.playWhenReady = !menuVisible
                         }
                     }
+
                     Player.STATE_BUFFERING -> {
-                        // Initial buffering is covered only by the long startup timeout.
-                        // Never force a restart during the first connection attempt.
-                        if (ready) scheduleBufferingRecovery(p, req.url)
+                        if (ready) {
+                            scheduleBufferingRecovery(p, req.url)
+                        }
                     }
+
                     else -> cancelBufferingTimeout()
                 }
             }
+
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (current?.url != req.url || exo !== p) return
-                if (isPlaying) cancelBufferingTimeout()
-                else if (ready && p.playbackState == Player.STATE_BUFFERING) {
+
+                if (isPlaying) {
+                    cancelBufferingTimeout()
+                } else if (
+                    ready &&
+                    p.playbackState == Player.STATE_BUFFERING
+                ) {
                     scheduleBufferingRecovery(p, req.url)
                 }
             }
+
             override fun onPlayerError(error: PlaybackException) {
                 if (current?.url != req.url || exo !== p) return
-                Log.e(TAG, "Media3 error code=${error.errorCode} host=${Uri.parse(req.url).host}", error)
+
+                Log.e(
+                    TAG,
+                    "Media3 error code=${error.errorCode} host=${Uri.parse(req.url).host}",
+                    error
+                )
+
                 onFailed(req.url)
                 close(suppressCurrent = true)
             }
         })
+
         p.volume = 0f
-        p.setMediaItem(MediaItem.Builder().setUri(req.url).setMimeType(mime).build())
+
+        p.setMediaItem(
+            MediaItem.Builder()
+                .setUri(req.url)
+                .setMimeType(mime)
+                .build()
+        )
+
         p.prepare()
         p.playWhenReady = true
+
         val timeoutTask = Runnable {
             if (current?.url == req.url && exo === p && !ready) {
-                Log.w(TAG, "Initial stream did not reach READY within ${STARTUP_TIMEOUT_MS / 1000}s")
+                Log.w(
+                    TAG,
+                    "Initial stream did not reach READY within ${STARTUP_TIMEOUT_MS / 1000}s"
+                )
+
                 onFailed(req.url)
                 close(suppressCurrent = true)
             }
         }
+
         timeout = timeoutTask
         handler.postDelayed(timeoutTask, STARTUP_TIMEOUT_MS)
-        Log.d(TAG, "Waiting up to ${STARTUP_TIMEOUT_MS / 1000}s for initial stream readiness")
+
+        Log.d(
+            TAG,
+            "Waiting up to ${STARTUP_TIMEOUT_MS / 1000}s for initial stream readiness"
+        )
     }
 
-    /** Only try a reconnection if a stream that *already worked* stalls for a long time. */
-    private fun scheduleBufferingRecovery(player: ExoPlayer, url: String) {
-        if (bufferingTimeout != null || attemptedBufferingRecovery || !ready || menuVisible ||
-            !player.playWhenReady || player.playbackState != Player.STATE_BUFFERING) return
+    private fun scheduleBufferingRecovery(
+        player: ExoPlayer,
+        url: String
+    ) {
+        if (bufferingTimeout != null ||
+            attemptedBufferingRecovery ||
+            !ready ||
+            menuVisible ||
+            !player.playWhenReady ||
+            player.playbackState != Player.STATE_BUFFERING
+        ) return
+
         val task = Runnable {
             bufferingTimeout = null
-            if (exo !== player || current?.url != url || !ready || menuVisible ||
-                !player.playWhenReady || player.playbackState != Player.STATE_BUFFERING ||
-                attemptedBufferingRecovery) return@Runnable
+
+            if (exo !== player ||
+                current?.url != url ||
+                !ready ||
+                menuVisible ||
+                !player.playWhenReady ||
+                player.playbackState != Player.STATE_BUFFERING ||
+                attemptedBufferingRecovery
+            ) return@Runnable
+
             attemptedBufferingRecovery = true
-            Log.w(TAG, "Stream stalled after playback; attempting one Media3 reconnect")
-            // Reuse the player and video surface. Don't reopen fullscreen or a new Activity.
+
+            Log.w(
+                TAG,
+                "Stream stalled after playback; attempting one Media3 reconnect"
+            )
+
             player.stop()
             player.prepare()
             player.playWhenReady = true
         }
+
         bufferingTimeout = task
         handler.postDelayed(task, REBUFFER_TIMEOUT_MS)
     }
 
     private fun cancelBufferingTimeout() {
-        bufferingTimeout?.let { handler.removeCallbacks(it) }
+        bufferingTimeout?.let {
+            handler.removeCallbacks(it)
+        }
+
         bufferingTimeout = null
     }
 
     private fun cancelTimeout() {
-        timeout?.let { handler.removeCallbacks(it) }
+        timeout?.let {
+            handler.removeCallbacks(it)
+        }
+
         timeout = null
     }
 
     private fun position(box: Box) {
         val host = holder ?: return
         val web = webView() ?: return
-        if (root.width <= 0 || root.height <= 0 || web.width <= 0 || web.height <= 0) return
+
+        if (root.width <= 0 ||
+            root.height <= 0 ||
+            web.width <= 0 ||
+            web.height <= 0
+        ) return
+
         val webLocation = IntArray(2)
         val rootLocation = IntArray(2)
+
         web.getLocationOnScreen(webLocation)
         root.getLocationOnScreen(rootLocation)
-        val w = root.width; val h = root.height
-        val left: Int; val top: Int; val width: Int; val height: Int
+
+        val w = root.width
+        val h = root.height
+        val left: Int
+        val top: Int
+        val width: Int
+        val height: Int
+
         if (fullscreen) {
-            left = 0; top = 0; width = w; height = h
+            left = 0
+            top = 0
+            width = w
+            height = h
         } else {
             val scaleX = web.width / box.viewportWidth
             val scaleY = web.height / box.viewportHeight
-            left = (webLocation[0] - rootLocation[0] + box.x * scaleX).roundToInt().coerceIn(0, w)
-            top = (webLocation[1] - rootLocation[1] + box.y * scaleY).roundToInt().coerceIn(0, h)
-            width = (box.width * scaleX).roundToInt().coerceAtMost(w - left).coerceAtLeast(1)
-            height = (box.height * scaleY).roundToInt().coerceAtMost(h - top).coerceAtLeast(1)
+
+            left = (
+                webLocation[0] -
+                    rootLocation[0] +
+                    box.x * scaleX
+                ).roundToInt().coerceIn(0, w)
+
+            top = (
+                webLocation[1] -
+                    rootLocation[1] +
+                    box.y * scaleY
+                ).roundToInt().coerceIn(0, h)
+
+            width = (box.width * scaleX)
+                .roundToInt()
+                .coerceAtMost(w - left)
+                .coerceAtLeast(1)
+
+            height = (box.height * scaleY)
+                .roundToInt()
+                .coerceAtMost(h - top)
+                .coerceAtLeast(1)
         }
-        // Frequent webpage position reports should not repeatedly relayout Media3's
-        // surface when the actual video rectangle has not changed.
-        val existing = host.layoutParams as? RelativeLayout.LayoutParams
-        if (existing != null && existing.width == width && existing.height == height &&
-            existing.leftMargin == left && existing.topMargin == top) return
+
+        val existing =
+            host.layoutParams as? RelativeLayout.LayoutParams
+
+        if (existing != null &&
+            existing.width == width &&
+            existing.height == height &&
+            existing.leftMargin == left &&
+            existing.topMargin == top
+        ) return
+
         val lp = RelativeLayout.LayoutParams(width, height)
-        lp.leftMargin = left; lp.topMargin = top
+        lp.leftMargin = left
+        lp.topMargin = top
         host.layoutParams = lp
     }
 
     fun isActive() = current != null
 
-    /** Back exits fullscreen first; the next Back restores clickable site server buttons. */
     fun handleBack(): Boolean {
         if (current == null) return false
+
         if (fullscreen) {
             fullscreen = false
-            oldUiFlags?.let { activity.window.decorView.systemUiVisibility = it }
+
+            oldUiFlags?.let {
+                activity.window.decorView.systemUiVisibility = it
+            }
+
             oldUiFlags = null
             button?.visibility = View.VISIBLE
-            current?.let { bestBox(it)?.let(::position) }
-            root.post { current?.let { bestBox(it)?.let(::position) } }
+
+            current?.let {
+                bestBox(it)?.let(::position)
+            }
+
+            root.post {
+                current?.let {
+                    bestBox(it)?.let(::position)
+                }
+            }
         } else {
             close(suppressCurrent = true)
         }
+
         return true
     }
 
     fun setMenuVisible(visible: Boolean) {
         menuVisible = visible
+
         if (visible) cancelBufferingTimeout()
-        holder?.visibility = if (visible || !ready) View.INVISIBLE else View.VISIBLE
+
+        holder?.visibility =
+            if (visible || !ready) {
+                View.INVISIBLE
+            } else {
+                View.VISIBLE
+            }
+
         if (visible) {
             consumingCursorTouch = false
         } else {
-            // Draw the cursor again at the next page frame after returning.
             lastCursorX = Float.NaN
             lastCursorY = Float.NaN
         }
+
         if (ready) exo?.playWhenReady = !visible
-        if (!visible && ready) exo?.let { player ->
-            if (player.playbackState == Player.STATE_BUFFERING) {
-                current?.let { scheduleBufferingRecovery(player, it.url) }
+
+        if (!visible && ready) {
+            exo?.let { player ->
+                if (player.playbackState == Player.STATE_BUFFERING) {
+                    current?.let {
+                        scheduleBufferingRecovery(player, it.url)
+                    }
+                }
             }
         }
     }
@@ -465,10 +786,23 @@ class InlineStreamPlayer(
         cancelTimeout()
         cancelBufferingTimeout()
         attemptedBufferingRecovery = false
-        if (suppressCurrent) current?.url?.let { cooldown[it] = SystemClock.uptimeMillis() + 120000L }
-        if (fullscreen) oldUiFlags?.let { activity.window.decorView.systemUiVisibility = it }
+
+        if (suppressCurrent) {
+            current?.url?.let {
+                cooldown[it] =
+                    SystemClock.uptimeMillis() + 120000L
+            }
+        }
+
+        if (fullscreen) {
+            oldUiFlags?.let {
+                activity.window.decorView.systemUiVisibility = it
+            }
+        }
+
         oldUiFlags = null
         fullscreen = false
+
         val wasReady = ready
         ready = false
         consumingCursorTouch = false
@@ -476,22 +810,31 @@ class InlineStreamPlayer(
         lastCursorX = Float.NaN
         lastCursorY = Float.NaN
         lastCursorVisible = false
+
         if (CursorDrawerDelegate.touchInterceptor === cursorInterceptor) {
             CursorDrawerDelegate.touchInterceptor = null
         }
+
         if (CursorDrawerDelegate.overlayRedrawHook === cursorRedrawHook) {
             CursorDrawerDelegate.overlayRedrawHook = null
         }
+
         val video = playerView
         video?.player = null
+
         exo?.release()
         exo = null
-        holder?.let { root.removeView(it) }
+
+        holder?.let {
+            root.removeView(it)
+        }
+
         holder = null
         playerView = null
         button = null
         current = null
         pending = null
+
         if (wasReady) onActiveChanged(false)
     }
 
