@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - 'v*' # Triggers a release automatically when you push a tag like v1.0.0
+      - 'v*'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Required to create a GitHub Release
+      contents: write
 
     steps:
       - name: Check out source
@@ -29,7 +29,6 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleGenericGeckoIncludedDebug
-        *Verification:* Gradle finishes with a `BUILD SUCCESSFUL` message.
 
       - name: Upload APK to GitHub Releases
         uses: softprops/action-gh-release@v2
@@ -37,4 +36,3 @@ jobs:
           files: app/build/outputs/apk/genericGeckoIncluded/debug/*.apk
           draft: false
           prerelease: false
-        *Verification:* The step finishes successfully and a new release appears on your main repository page under **Releases**.
