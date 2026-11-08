@@ -1,11 +1,16 @@
-name: Build Mom Broswer
+name: Build Mom Browser
 
 on:
   workflow_dispatch:
+  push:
+    tags:
+      - 'v*' # Triggers a release automatically when you push a tag like v1.0.0
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # Required to create a GitHub Release
 
     steps:
       - name: Check out source
@@ -24,9 +29,12 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :app:assembleGenericGeckoIncludedDebug
+        *Verification:* Gradle finishes with a `BUILD SUCCESSFUL` message.
 
-      - name: Save APK
-        uses: actions/upload-artifact@v4
+      - name: Upload APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
         with:
-          name: Mom-Broswer-GeckoView-APK
-          path: app/build/outputs/apk/genericGeckoIncluded/debug/*.apk
+          files: app/build/outputs/apk/genericGeckoIncluded/debug/*.apk
+          draft: false
+          prerelease: false
+        *Verification:* The step finishes successfully and a new release appears on your main repository page under **Releases**.
