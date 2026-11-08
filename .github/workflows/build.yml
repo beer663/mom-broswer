@@ -33,6 +33,9 @@ jobs:
       - name: Upload APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: debug-build
+          name: "Mom Browser Debug Build"
           files: app/build/outputs/apk/genericGeckoIncluded/debug/*.apk
           draft: false
-          prerelease: false
+          prerelease: true
+          overwrite: true
