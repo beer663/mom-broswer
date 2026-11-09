@@ -30,12 +30,17 @@ jobs:
           chmod +x gradlew
           ./gradlew :app:assembleGenericGeckoIncludedDebug
 
+      - name: Rename APK for Release
+        run: |
+          mkdir -p release-files
+          cp app/build/outputs/apk/genericGeckoIncluded/debug/*.apk release-files/Mom-Browser-Debug.apk
+
       - name: Upload APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: debug-build
           name: "Mom Browser Debug Build"
-          files: app/build/outputs/apk/genericGeckoIncluded/debug/*.apk
+          files: release-files/Mom-Browser-Debug.apk
           draft: false
           prerelease: true
           overwrite: true
