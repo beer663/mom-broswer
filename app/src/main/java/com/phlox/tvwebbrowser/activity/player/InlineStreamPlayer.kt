@@ -143,6 +143,7 @@ class InlineStreamPlayer(
         val delegate = cursorDelegate ?: return
         val hLoc = IntArray(2)
         val wLoc = IntArray(2)
+
         host.getLocationOnScreen(hLoc)
         delegate.surface.getLocationOnScreen(wLoc)
 
@@ -178,6 +179,7 @@ class InlineStreamPlayer(
 
         val bLoc = IntArray(2)
         val wLoc = IntArray(2)
+
         b.getLocationOnScreen(bLoc)
         web.getLocationOnScreen(wLoc)
 
@@ -430,10 +432,10 @@ class InlineStreamPlayer(
             FrameLayout.LayoutParams(
                 dp(124),
                 dp(48),
-                Gravity.TOP or Gravity.LEFT
+                Gravity.BOTTOM or Gravity.LEFT
             ).apply {
                 leftMargin = dp(8)
-                topMargin = dp(8)
+                bottomMargin = dp(8)
             }
         )
 
@@ -659,6 +661,7 @@ class InlineStreamPlayer(
 
         val webLocation = IntArray(2)
         val rootLocation = IntArray(2)
+
         web.getLocationOnScreen(webLocation)
         root.getLocationOnScreen(rootLocation)
 
@@ -720,9 +723,11 @@ class InlineStreamPlayer(
 
         if (fullscreen) {
             fullscreen = false
+
             oldUiFlags?.let {
                 activity.window.decorView.systemUiVisibility = it
             }
+
             oldUiFlags = null
             button?.visibility = View.VISIBLE
 
@@ -744,6 +749,7 @@ class InlineStreamPlayer(
 
     fun setMenuVisible(visible: Boolean) {
         menuVisible = visible
+
         if (visible) cancelBufferingTimeout()
 
         holder?.visibility =
