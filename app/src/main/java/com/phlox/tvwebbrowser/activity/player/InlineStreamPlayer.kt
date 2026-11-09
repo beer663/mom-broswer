@@ -13,12 +13,14 @@ import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
-import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.RelativeLayout
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
@@ -83,8 +85,26 @@ class InlineStreamPlayer(
     private var timeout: Runnable? = null
     private var bufferingTimeout: Runnable? = null
     private var attemptedBufferingRecovery = false
-
     private val startPending = Runnable { startIfPositioned() }
+
+    private val lifecycleObserver = object : DefaultLifecycleObserver {
+        override fun onResume(owner: LifecycleOwner) {
+            if (pending != null) handler.post(startPending)
+        }
+
+        override fun onPause(owner: LifecycleOwner) {
+            reset()
+        }
+
+        override fun onDestroy(owner: LifecycleOwner) {
+            reset()
+            owner.lifecycle.removeObserver(this)
+        }
+    }
+
+    init {
+        activity.lifecycle.addObserver(lifecycleObserver)
+    }
 
     private var consumingCursorTouch = false
     private var cursorDelegate: CursorDrawerDelegate? = null
@@ -92,7 +112,8 @@ class InlineStreamPlayer(
     private var lastCursorY = Float.NaN
     private var lastCursorVisible = false
 
-    private val cursorRedrawHook: (CursorDrawerDelegate) -> Unit = { delegate ->
+    private val cursorRedrawHook:
+        (CursorDrawerDelegate) -> Unit = { delegate ->
         val host = holder
 
         if (host != null &&
@@ -102,7 +123,6 @@ class InlineStreamPlayer(
             delegate.surface === webView()
         ) {
             cursorDelegate = delegate
-
             val x = delegate.cursorPosition.x
             val y = delegate.cursorPosition.y
             val visible = delegate.isCursorVisibleForOverlay()
@@ -123,7 +143,6 @@ class InlineStreamPlayer(
         val delegate = cursorDelegate ?: return
         val hLoc = IntArray(2)
         val wLoc = IntArray(2)
-
         host.getLocationOnScreen(hLoc)
         delegate.surface.getLocationOnScreen(wLoc)
 
@@ -159,7 +178,6 @@ class InlineStreamPlayer(
 
         val bLoc = IntArray(2)
         val wLoc = IntArray(2)
-
         b.getLocationOnScreen(bLoc)
         web.getLocationOnScreen(wLoc)
 
@@ -174,7 +192,6 @@ class InlineStreamPlayer(
 
     private val cursorInterceptor:
         (View, Float, Float, Int) -> Boolean = { web, x, y, action ->
-
         if (web !== webView() ||
             !ready ||
             menuVisible ||
@@ -219,16 +236,11 @@ class InlineStreamPlayer(
     private fun isPlaylist(url: String): Boolean {
         val uri = Uri.parse(url)
         if (uri.scheme != "http" && uri.scheme != "https") return false
-
         val path = uri.path?.lowercase(Locale.ROOT) ?: return false
         return path.endsWith(".m3u8") || path.endsWith(".mpd")
     }
 
-    fun detect(
-        url: String,
-        origin: String,
-        userAgent: String?
-    ) {
+    fun detect(url: String, origin: String, userAgent: String?) {
         if (!isPlaylist(url)) return
 
         val now = SystemClock.uptimeMillis()
@@ -237,7 +249,6 @@ class InlineStreamPlayer(
 
         pending = Request(url, origin, userAgent)
         pendingReadyAt = now + 750L
-
         handler.removeCallbacks(startPending)
         handler.postDelayed(startPending, 750L)
     }
@@ -322,6 +333,10 @@ class InlineStreamPlayer(
     }
 
     private fun startIfPositioned() {
+        if (!activity.lifecycle.currentState
+                .isAtLeast(Lifecycle.State.RESUMED)
+        ) return
+
         val req = pending ?: return
         val box = bestBox(req) ?: return
 
@@ -374,10 +389,7 @@ class InlineStreamPlayer(
             background = GradientDrawable().apply {
                 setColor(Color.rgb(48, 54, 61))
                 cornerRadius = dp(26).toFloat()
-                setStroke(
-                    dp(1),
-                    Color.rgb(216, 222, 232)
-                )
+                setStroke(dp(1), Color.rgb(216, 222, 232))
             }
 
             isFocusable = false
@@ -403,11 +415,9 @@ class InlineStreamPlayer(
                             View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
 
                     position(box)
-
                     root.post {
                         if (fullscreen) position(box)
                     }
-
                     visibility = View.GONE
                 }
             }
@@ -506,7 +516,6 @@ class InlineStreamPlayer(
 
                             CursorDrawerDelegate.touchInterceptor =
                                 cursorInterceptor
-
                             CursorDrawerDelegate.overlayRedrawHook =
                                 cursorRedrawHook
 
@@ -515,8 +524,6 @@ class InlineStreamPlayer(
                             )
 
                             onActiveChanged(true)
-
-                            // The menu may have opened during buffering.
                             p.playWhenReady = !menuVisible
                         }
                     }
@@ -576,7 +583,6 @@ class InlineStreamPlayer(
                     TAG,
                     "Initial stream did not reach READY within ${STARTUP_TIMEOUT_MS / 1000}s"
                 )
-
                 onFailed(req.url)
                 close(suppressCurrent = true)
             }
@@ -632,18 +638,12 @@ class InlineStreamPlayer(
     }
 
     private fun cancelBufferingTimeout() {
-        bufferingTimeout?.let {
-            handler.removeCallbacks(it)
-        }
-
+        bufferingTimeout?.let { handler.removeCallbacks(it) }
         bufferingTimeout = null
     }
 
     private fun cancelTimeout() {
-        timeout?.let {
-            handler.removeCallbacks(it)
-        }
-
+        timeout?.let { handler.removeCallbacks(it) }
         timeout = null
     }
 
@@ -659,7 +659,6 @@ class InlineStreamPlayer(
 
         val webLocation = IntArray(2)
         val rootLocation = IntArray(2)
-
         web.getLocationOnScreen(webLocation)
         root.getLocationOnScreen(rootLocation)
 
@@ -680,16 +679,12 @@ class InlineStreamPlayer(
             val scaleY = web.height / box.viewportHeight
 
             left = (
-                webLocation[0] -
-                    rootLocation[0] +
-                    box.x * scaleX
-                ).roundToInt().coerceIn(0, w)
+                webLocation[0] - rootLocation[0] + box.x * scaleX
+            ).roundToInt().coerceIn(0, w)
 
             top = (
-                webLocation[1] -
-                    rootLocation[1] +
-                    box.y * scaleY
-                ).roundToInt().coerceIn(0, h)
+                webLocation[1] - rootLocation[1] + box.y * scaleY
+            ).roundToInt().coerceIn(0, h)
 
             width = (box.width * scaleX)
                 .roundToInt()
@@ -725,11 +720,9 @@ class InlineStreamPlayer(
 
         if (fullscreen) {
             fullscreen = false
-
             oldUiFlags?.let {
                 activity.window.decorView.systemUiVisibility = it
             }
-
             oldUiFlags = null
             button?.visibility = View.VISIBLE
 
@@ -751,15 +744,10 @@ class InlineStreamPlayer(
 
     fun setMenuVisible(visible: Boolean) {
         menuVisible = visible
-
         if (visible) cancelBufferingTimeout()
 
         holder?.visibility =
-            if (visible || !ready) {
-                View.INVISIBLE
-            } else {
-                View.VISIBLE
-            }
+            if (visible || !ready) View.INVISIBLE else View.VISIBLE
 
         if (visible) {
             consumingCursorTouch = false
@@ -819,15 +807,11 @@ class InlineStreamPlayer(
             CursorDrawerDelegate.overlayRedrawHook = null
         }
 
-        val video = playerView
-        video?.player = null
-
+        playerView?.player = null
         exo?.release()
         exo = null
 
-        holder?.let {
-            root.removeView(it)
-        }
+        holder?.let { root.removeView(it) }
 
         holder = null
         playerView = null
