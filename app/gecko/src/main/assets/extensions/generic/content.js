@@ -6,7 +6,6 @@ window.addEventListener("load", function () {
 
 const communicatePort = browser.runtime.connectNative("tvbro_content");
 
-// The background script supplies the exact requesting tab and frame.
 browser.runtime.onMessage.addListener(message => {
     if (!message || message.type !== "nativeStreamDetected") return;
 
@@ -16,15 +15,28 @@ browser.runtime.onMessage.addListener(message => {
             url: message.url,
             origin: message.origin
         });
-    } catch (_) {
-        // Frame navigated; keep website playback.
-    }
+    } catch (_) {}
 });
 
+let momBrowserInForeground = true;
 let momNativeInlineActive = false;
 const momNativeVideoStates = new Map();
 
 communicatePort.onMessage.addListener(message => {
+    if (message && message.type === "browserForeground") {
+        momBrowserInForeground = message.foreground === true;
+
+        if (!momBrowserInForeground) {
+            document.querySelectorAll("video, audio").forEach(media => {
+                try {
+                    media.pause();
+                } catch (_) {}
+            });
+        }
+
+        return;
+    }
+
     if (!message || message.type !== "nativeInlinePlayback") return;
 
     if (message.active) {
@@ -55,13 +67,14 @@ communicatePort.onMessage.addListener(message => {
             const info = tvbroAutoplayInfo.get(v);
             if (info) info.userPaused = state.userPaused === true;
 
-            if (!state.paused && !v.ended) {
+            if (momBrowserInForeground &&
+                message.restorePlayback !== false &&
+                !state.paused &&
+                !v.ended) {
                 try {
                     const result = v.play();
                     if (result && result.catch) result.catch(() => {});
-                } catch (_) {
-                    // Website controls remain available if autoplay is denied.
-                }
+                } catch (_) {}
             }
         }
 
@@ -69,7 +82,6 @@ communicatePort.onMessage.addListener(message => {
     }
 });
 
-// Find the biggest visible video, preferring one that is already playing.
 function tvbroVideoCandidate() {
     let best = null;
 
@@ -112,22 +124,21 @@ function tvbroVideoIsMuted(video) {
     return !!video && (video.muted || video.volume === 0);
 }
 
-// Rectangles use CSS pixels in the top document viewport.
 const MOM_INLINE_RECT_TAG = "__mom_browser_inline_video_rect_1";
 let momLastRectSent = 0;
 const momChildRects = new Map();
 
 function momSendRectToNative(rect) {
-    if (!(rect.width > 50 && rect.height > 40 &&
-          rect.viewportWidth > 0 && rect.viewportHeight > 0)) return;
+    if (!(rect.width > 50 &&
+          rect.height > 40 &&
+          rect.viewportWidth > 0 &&
+          rect.viewportHeight > 0)) return;
 
     try {
         communicatePort.postMessage(
             Object.assign({ type: "inlineVideoRect" }, rect)
         );
-    } catch (_) {
-        // The extension port may be gone during navigation.
-    }
+    } catch (_) {}
 }
 
 function momRelayRect(rect, force) {
@@ -161,7 +172,6 @@ function momTranslateChildRect(rect, frame) {
     const r = frame.getBoundingClientRect();
     const sx = r.width / Math.max(1, rect.viewportWidth);
     const sy = r.height / Math.max(1, rect.viewportHeight);
-
     const left = r.left + rect.x * sx;
     const top = r.top + rect.y * sy;
     const right = left + rect.width * sx;
@@ -449,7 +459,8 @@ function tvbroUpdateVideoControlsUnsafe() {
     }
 
     if (tvbroUnmuteButton) {
-        tvbroUnmuteButton.hidden = !hasVideo || !tvbroVideoIsMuted(video);
+        tvbroUnmuteButton.hidden =
+            !hasVideo || !tvbroVideoIsMuted(video);
     }
 
     if (tvbroFullscreenButton) {
@@ -572,7 +583,6 @@ function momActivateVideoWatchers() {
         "scroll", tvbroScheduleReposition, { passive: true }
     );
     window.addEventListener("resize", tvbroScheduleReposition);
-
     setInterval(tvbroScheduleVideoCheck, 2000);
     tvbroScheduleVideoCheckNow();
 }
@@ -610,12 +620,16 @@ function tvbroVideoOnScreen(v) {
 }
 
 function tvbroStartPlayback(video) {
+    if (!momBrowserInForeground || momNativeInlineActive) return;
+
     const start = () => {
         const p = video.play();
         return (p && p.then) ? p : Promise.resolve();
     };
 
     start().catch(() => {
+        if (!momBrowserInForeground || momNativeInlineActive) return;
+
         try {
             video.muted = true;
             start().catch(() => {});
@@ -682,7 +696,8 @@ function tvbroClickPlayOverlay(video) {
 }
 
 function tvbroTryAutoplay(video) {
-    if (momNativeInlineActive ||
+    if (!momBrowserInForeground ||
+        momNativeInlineActive ||
         !tvbroAutoplayEnabled ||
         !video.isConnected) return;
 
@@ -711,7 +726,8 @@ function tvbroTryAutoplay(video) {
         info.overlayTimer = setTimeout(() => {
             info.overlayTimer = null;
 
-            if (momNativeInlineActive ||
+            if (!momBrowserInForeground ||
+                momNativeInlineActive ||
                 !video.isConnected ||
                 info.userPaused ||
                 video.ended ||
@@ -721,7 +737,8 @@ function tvbroTryAutoplay(video) {
 
             if (tvbroClickPlayOverlay(video)) {
                 setTimeout(() => {
-                    if (!momNativeInlineActive &&
+                    if (momBrowserInForeground &&
+                        !momNativeInlineActive &&
                         video.isConnected &&
                         video.paused &&
                         !video.ended &&
@@ -743,7 +760,9 @@ const tvbroVideoObserver = ("IntersectionObserver" in window)
     : null;
 
 function tvbroAutoplayScan() {
-    if (momNativeInlineActive || !momVideoWatchersStarted) return;
+    if (!momBrowserInForeground ||
+        momNativeInlineActive ||
+        !momVideoWatchersStarted) return;
 
     const videos = document.querySelectorAll("video");
     let playing = false;
