@@ -1,4 +1,3 @@
-// Runs after content.js in the same extension frame.
 (() => {
     const updateOriginal = tvbroUpdateVideoControlsUnsafe;
 
@@ -19,5 +18,46 @@
         ) + "px";
     };
 
+    function blocked() {
+        return !momBrowserInForeground ||
+            momNativeInlineActive ||
+            document.visibilityState === "hidden";
+    }
+
+    function pauseMedia(media) {
+        if (media && typeof media.pause === "function") {
+            try {
+                media.pause();
+            } catch (_) {}
+        }
+    }
+
+    function pauseBlockedMedia() {
+        if (blocked()) {
+            document.querySelectorAll("video, audio")
+                .forEach(pauseMedia);
+        }
+    }
+
+    ["play", "playing"].forEach(type => {
+        window.addEventListener(type, event => {
+            if (blocked()) pauseMedia(event.target);
+        }, true);
+    });
+
+    document.addEventListener(
+        "visibilitychange",
+        pauseBlockedMedia,
+        true
+    );
+
+    communicatePort.onMessage.addListener(pauseBlockedMedia);
+
+    window.addEventListener("pagehide", () => {
+        document.querySelectorAll("video, audio")
+            .forEach(pauseMedia);
+    }, true);
+
     tvbroUpdateVideoControls();
+    pauseBlockedMedia();
 })();
