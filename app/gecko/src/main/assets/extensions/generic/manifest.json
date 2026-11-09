@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "tvbro-generic",
-  "version": "1.0.3",
+  "version": "1.0.6",
   "description": "TV Bro Generic Addon",
   "browser_specific_settings": {
     "gecko": {
@@ -14,7 +14,8 @@
         "*://*/*"
       ],
       "js": [
-        "content.js"
+        "content.js",
+        "video-controls-bottom.js"
       ],
       "run_at": "document_start",
       "all_frames": true
