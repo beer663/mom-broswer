@@ -12,12 +12,36 @@ import java.io.InputStream
 
 interface WebEngineWindowProviderCallback {
     fun getActivity(): Activity
-    fun onOpenInNewTabRequested(url: String, navigateImmediately: Boolean): WebEngine?
+
+    fun onOpenInNewTabRequested(
+        url: String,
+        navigateImmediately: Boolean
+    ): WebEngine?
+
     fun onDownloadRequested(url: String)
-    fun onDownloadRequested(url: String, referer: String, originalDownloadFileName: String?, userAgent: String?, mimeType: String?,
-                            operationAfterDownload: Download.OperationAfterDownload = Download.OperationAfterDownload.NOP,
-                            base64BlobData: String? = null, stream: InputStream? = null, size: Long = 0L, contentDisposition: String? = null)
-    fun onDownloadRequested(url: String, userAgent: String?, contentDisposition: String, mimetype: String?, contentLength: Long)
+
+    fun onDownloadRequested(
+        url: String,
+        referer: String,
+        originalDownloadFileName: String?,
+        userAgent: String?,
+        mimeType: String?,
+        operationAfterDownload: Download.OperationAfterDownload =
+            Download.OperationAfterDownload.NOP,
+        base64BlobData: String? = null,
+        stream: InputStream? = null,
+        size: Long = 0L,
+        contentDisposition: String? = null
+    )
+
+    fun onDownloadRequested(
+        url: String,
+        userAgent: String?,
+        contentDisposition: String,
+        mimetype: String?,
+        contentLength: Long
+    )
+
     fun onProgressChanged(newProgress: Int)
     fun onReceivedTitle(title: String)
     fun requestPermissions(array: Array<String>): Int
@@ -27,7 +51,13 @@ interface WebEngineWindowProviderCallback {
     fun onPageStarted(url: String?)
     fun onPageFinished(url: String?)
     fun onPageCertificateError(url: String?)
-    fun isAd(url: Uri, acceptHeader: String?, baseUri: Uri): Boolean?
+
+    fun isAd(
+        url: Uri,
+        acceptHeader: String?,
+        baseUri: Uri
+    ): Boolean?
+
     fun isAdBlockingEnabled(): Boolean
     fun isDialogsBlockingEnabled(): Boolean
     fun shouldBlockNewWindow(dialog: Boolean, userGesture: Boolean): Boolean
@@ -42,24 +72,51 @@ interface WebEngineWindowProviderCallback {
     fun initiateVoiceSearch()
     fun onEditHomePageBookmarkSelected(index: Int)
     fun getHomePageLinks(): List<HomePageLink>
-    /** Called when a video appears on / disappears from the page (GeckoView only). */
+
     fun onVideoPresenceChanged(present: Boolean) {}
-    /** Non-blocking playlist observation from the GeckoView extension. */
     fun onNativeStreamDetected(url: String, origin: String) {}
-    /** Normalized video rectangle in the top webpage viewport, including nested iframes. */
-    fun onInlineVideoRect(frameUrl: String, x: Double, y: Double, width: Double,
-                          height: Double, viewportWidth: Double, viewportHeight: Double) {}
+
+    fun onInlineVideoRect(
+        frameUrl: String,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        viewportWidth: Double,
+        viewportHeight: Double,
+        clipX: Double = x,
+        clipY: Double = y,
+        clipWidth: Double = width,
+        clipHeight: Double = height,
+        measuredAt: Long = 0L
+    ) {}
 
     fun onPrepareForFullscreen()
     fun onExitFullscreen()
     fun onVisited(url: String)
-    fun suggestActionsForLink(baseUri: String?, linkUri: String?, srcUri: String?,
-                              title: String?, altText: String?, textContent: String?,
-                              x: Int, y: Int)
+
+    fun suggestActionsForLink(
+        baseUri: String?,
+        linkUri: String?,
+        srcUri: String?,
+        title: String?,
+        altText: String?,
+        textContent: String?,
+        x: Int,
+        y: Int
+    )
+
     fun markBookmarkRecommendationAsUseful(bookmarkOrder: Int)
+
     fun onContextMenu(
-        cursorDrawer: CursorDrawerDelegate, baseUri: String?, linkUri: String?, srcUri: String?,
-        title: String?, altText: String?,
-        textContent: String?, x: Int, y: Int
+        cursorDrawer: CursorDrawerDelegate,
+        baseUri: String?,
+        linkUri: String?,
+        srcUri: String?,
+        title: String?,
+        altText: String?,
+        textContent: String?,
+        x: Int,
+        y: Int
     )
 }
