@@ -1,5 +1,4 @@
 package com.phlox.tvwebbrowser.activity.main
-
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
@@ -151,11 +150,13 @@ Config.HOME_PAGE_URL.trimEnd('/'))
 
 private lateinit var prefs: SharedPreferences
 protected val config = AppContext.provideConfig()
+
 private val voiceSearchHelper = VoiceSearchHelper(
 this,
 VOICE_SEARCH_REQUEST_CODE,
 MY_PERMISSIONS_REQUEST_VOICE_SEARCH_PERMISSIONS
 )
+
 private var lastCommonRequestsCode = COMMON_REQUESTS_START_CODE
 private var downloadService: DownloadService? = null
 private var downloadIntent: Download? = null
@@ -638,6 +639,7 @@ hideBottomPanel()
 
 private fun changeTab(newTab: WebTabState) {
 if (tabsModel.currentTab.value !== newTab) inlinePlayer.reset()
+
 tabsModel.changeTab(
 newTab,
 { tab: WebTabState -> createWebView(tab) },
@@ -907,6 +909,7 @@ val tab = tabsModel.currentTab.value ?: return
 val currentHostConfig = tabsModel.findHostConfig(tab, false)
 val currentBlockPopupsLevelValue = currentHostConfig?.popupBlockLevel ?:
 HostConfig.DEFAULT_BLOCK_POPUPS_VALUE
+
 val hostName = currentHostConfig?.hostName ?: try {
 URL(tab.url).host
 } catch (e: Exception) {
@@ -963,6 +966,7 @@ startActivityForResult(intent, nativeStreamRequestCode)
 fun navigate(url: String) {
 inlinePlayer.reset()
 Log.d(TAG, "navigate: $url")
+
 vb.vActionBar.setAddressBoxTextColor(
 ContextCompat.getColor(this@MainActivity, R.color.default_url_color)
 )
@@ -1037,6 +1041,7 @@ viewModel.clearIncognitoData().join()
 
 vb.progressBarGeneric.visibility = View.GONE
 config.incognitoMode = becomingIncognitoMode
+
 if (andSwitchProcess) {
 switchProcess(becomingIncognitoMode)
 }
@@ -1059,9 +1064,11 @@ intent.addFlags(
 Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
 )
 intent.putExtra(KEY_PROCESS_ID_TO_KILL, Process.myPid())
+
 intentDataToCopy?.let {
 intent.putExtras(it)
 }
+
 startActivity(intent)
 exitProcess(0)
 }
@@ -1391,6 +1398,7 @@ tabsModel.currentTab.value?.webEngine?.getView()?.requestFocus()
 
 private fun syncTabWithTitles() {
 val tab = tabByTitleIndex(vb.vTabs.current)
+
 if (tab == null) {
 openInNewTab(
 settingsModel.homePage,
@@ -1486,7 +1494,12 @@ y: Double,
 width: Double,
 height: Double,
 viewportWidth: Double,
-viewportHeight: Double
+viewportHeight: Double,
+clipX: Double,
+clipY: Double,
+clipWidth: Double,
+clipHeight: Double,
+measuredAt: Long
 ) {
 if (tabsModel.currentTab.value !== tab ||
 !config.isWebEngineGecko()) return
@@ -1498,7 +1511,12 @@ y,
 width,
 height,
 viewportWidth,
-viewportHeight
+viewportHeight,
+clipX,
+clipY,
+clipWidth,
+clipHeight,
+measuredAt
 )
 }
 
@@ -1511,20 +1529,24 @@ url: String,
 navigateImmediately: Boolean
 ): WebEngine? {
 var index = tabsModel.tabsStates.indexOf(tabsModel.currentTab.value)
+
 index = if (index == -1) {
 tabsModel.tabsStates.size
 } else {
 index + 1
 }
+
 return openInNewTab(url, index, true, navigateImmediately)
 }
 
 override fun onDownloadRequested(url: String) {
 Log.i(TAG, "onDownloadRequested url: $url")
 val fileName = Uri.parse(url).lastPathSegment
+
 val mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(
 MimeTypeMap.getFileExtensionFromUrl(url)
 )
+
 onDownloadRequested(
 url,
 tab.url,
@@ -1551,6 +1573,7 @@ url,
 contentDisposition,
 mimeType
 )
+
 this@MainActivity.onDownloadRequested(
 url,
 referer,
@@ -1594,6 +1617,7 @@ vb.progressBar.progress = newProgress
 }
 
 uiHandler.removeCallbacks(progressBarHideRunnable)
+
 if (newProgress == 100) {
 uiHandler.postDelayed(progressBarHideRunnable, 1000)
 } else {
@@ -1667,6 +1691,7 @@ return true
 
 return try {
 Log.d(TAG, "shouldOverrideUrlLoading: non-network url: $url")
+
 val intent = Intent(Intent.ACTION_VIEW, uri)
 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
 
@@ -1677,6 +1702,7 @@ askUserAndOpenInExternalApp(url, intent)
 true
 } else {
 Log.d(TAG, "shouldOverrideUrlLoading: no activity to handle intent")
+
 runOnUiThread {
 Utils.showToast(
 applicationContext,
@@ -1701,6 +1727,7 @@ tab.hasVideo = false
 onWebViewUpdated(tab)
 
 val webViewUrl = tab.webEngine.url
+
 if (webViewUrl != null) {
 tab.url = webViewUrl
 } else if (url != null) {
@@ -1718,6 +1745,7 @@ Log.w(TAG, "Unable to load popup rule", e)
 if (tabByTitleIndex(vb.vTabs.current) == tab) {
 vb.vActionBar.setAddressBoxText(tab.url)
 }
+
 tab.blockedAds = 0
 tab.blockedPopups = 0
 }
@@ -1726,9 +1754,10 @@ override fun onPageFinished(url: String?) {
 if (tabsModel.currentTab.value == null) {
 return
 }
-onWebViewUpdated(tab)
 
+onWebViewUpdated(tab)
 val webViewUrl = tab.webEngine.url
+
 if (webViewUrl != null) {
 tab.url = webViewUrl
 } else if (url != null) {
@@ -1745,8 +1774,10 @@ if (it != tab) it.thumbnail = null
 
 lifecycleScope.launch {
 val newThumbnail = tab.webEngine.renderThumbnail(tab.thumbnail)
+
 if (newThumbnail != null) {
 tab.updateThumbnail(this@MainActivity, newThumbnail)
+
 if (vb.rlActionBar.visibility == View.VISIBLE &&
 tab == tabsModel.currentTab.value) {
 displayThumbnail(tab)
@@ -1887,6 +1918,7 @@ intent.addCategory(Intent.CATEGORY_BROWSABLE)
 val activityComponent = intent.resolveActivity(
 this@MainActivity.packageManager
 )
+
 if (activityComponent != null &&
 activityComponent.packageName == this@MainActivity.packageName) {
 Toast.makeText(
@@ -1918,6 +1950,7 @@ lifecycleScope.launch {
 val bookmark = viewModel.homePageLinks.firstOrNull {
 it.order == index
 }
+
 var favoriteItem: FavoriteItem? = bookmark?.favoriteId?.let {
 AppDatabase.db.favoritesDao().getById(it)
 }
@@ -1967,6 +2000,7 @@ override fun onExitFullscreen() {
 if (!config.keepScreenOn) {
 window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 }
+
 window.decorView.systemUiVisibility =
 View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
 isFullscreen = false
@@ -2023,9 +2057,11 @@ x: Int,
 y: Int
 ) {
 var s = linkUri ?: srcUri
+
 if (s != null && s.startsWith("\"") && s.endsWith("\"")) {
 s = s.substring(1, s.length - 1)
 }
+
 val url = s
 val isHTTPUrl = url != null &&
 (url.startsWith("http://") || url.startsWith("https://"))
@@ -2111,6 +2147,7 @@ name: ComponentName,
 service: IBinder
 ) {
 val binder = service as? DownloadService.Binder
+
 if (binder == null) {
 Log.e(TAG, "Download service connection failed")
 uiHandler.postDelayed({
@@ -2122,6 +2159,7 @@ Context.BIND_AUTO_CREATE
 }, 1000)
 return
 }
+
 downloadService = binder.service
 }
 
