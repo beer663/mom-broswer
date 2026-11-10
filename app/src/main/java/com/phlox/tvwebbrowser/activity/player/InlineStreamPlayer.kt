@@ -1,4 +1,5 @@
 package com.phlox.tvwebbrowser.activity.player
+
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Typeface
@@ -40,7 +41,8 @@ private val activity: AppCompatActivity,
 private val root: RelativeLayout,
 private val webView: () -> View?,
 private val onActiveChanged: (Boolean) -> Unit,
-private val onFailed: (String) -> Unit
+private val onFailed: (String) -> Unit,
+private val onFullscreenRequested: () -> Unit = {}
 ) {
 private companion object {
 const val TAG = "MomBrowserMedia3"
@@ -82,7 +84,6 @@ private var timeout: Runnable? = null
 private var bufferingTimeout: Runnable? = null
 private var attemptedBufferingRecovery = false
 private val startPending = Runnable { startIfPositioned() }
-
 private val lifecycleObserver = object : DefaultLifecycleObserver {
 override fun onResume(owner: LifecycleOwner) {
 if (pending != null) handler.post(startPending)
@@ -98,20 +99,14 @@ owner.lifecycle.removeObserver(this)
 init {
 activity.lifecycle.addObserver(lifecycleObserver)
 }
-
-private val playerLayoutListener =
-View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+private val playerLayoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
 current?.let { request ->
 val box = bestBox(request) ?: if (fullscreen) {
-Box(
-request.origin,
-0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0L
-)
+Box(request.origin, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0L)
 } else lastInlineBox
 box?.let(::position)
 }
 }
-
 private var consumingCursorTouch = false
 private var cursorDelegate: CursorDrawerDelegate? = null
 private var lastCursorX = Float.NaN
@@ -141,7 +136,6 @@ host.postInvalidateOnAnimation()
 }
 }
 }
-
 private fun drawCursorOnPlayer(host: View, canvas: Canvas) {
 val delegate = cursorDelegate ?: return
 val hLoc = IntArray(2)
@@ -157,9 +151,10 @@ cy > host.height
 ) return
 delegate.drawCursorAt(canvas, cx, cy)
 }
-
 private fun cursorOverButton(
-web: View, x: Float, y: Float
+web: View,
+x: Float,
+y: Float
 ): Boolean {
 val b = button ?: return false
 val host = holder ?: return false
@@ -183,7 +178,6 @@ sx <= bLoc[0] + b.width &&
 sy >= bLoc[1] &&
 sy <= bLoc[1] + b.height
 }
-
 private val cursorInterceptor:
 (View, Float, Float, Int) -> Boolean = { web, x, y, action ->
 if (web !== webView() ||
@@ -217,17 +211,14 @@ consumed
 else -> false
 }
 }
-
 private fun dp(value: Int) =
 (value * activity.resources.displayMetrics.density + .5f).toInt()
-
 private fun isPlaylist(url: String): Boolean {
 val uri = Uri.parse(url)
 if (uri.scheme != "http" && uri.scheme != "https") return false
 val path = uri.path?.lowercase(Locale.ROOT) ?: return false
 return path.endsWith(".m3u8") || path.endsWith(".mpd")
 }
-
 fun detect(url: String, origin: String, userAgent: String?) {
 if (!isPlaylist(url)) return
 val now = SystemClock.uptimeMillis()
@@ -238,7 +229,6 @@ pendingReadyAt = now + 750L
 handler.removeCallbacks(startPending)
 handler.postDelayed(startPending, 750L)
 }
-
 fun updateRect(
 frameUrl: String,
 x: Double,
@@ -278,7 +268,6 @@ handler.removeCallbacks(startPending)
 handler.post(startPending)
 }
 }
-
 private fun bestBox(request: Request): Box? {
 val now = SystemClock.uptimeMillis()
 val originUri = runCatching {
@@ -305,7 +294,6 @@ if (exact) 10.0 else if (sameHost) 5.0 else 0.0
 }
 return match.maxByOrNull { score(it) }
 }
-
 private fun startIfPositioned() {
 if (!activity.lifecycle.currentState
 .isAtLeast(Lifecycle.State.RESUMED)
@@ -324,7 +312,6 @@ muted = true
 ready = false
 attemptedBufferingRecovery = false
 cancelBufferingTimeout()
-
 val host = object : FrameLayout(activity) {
 override fun dispatchDraw(canvas: Canvas) {
 super.dispatchDraw(canvas)
@@ -345,7 +332,6 @@ false
 ) as PlayerView
 playerView = video
 host.addView(video, FrameLayout.LayoutParams(-1, -1))
-
 val control = Button(activity).apply {
 text = "Unmute"
 isAllCaps = false
@@ -363,30 +349,7 @@ setStroke(dp(1), Color.rgb(216, 222, 232))
 isFocusable = false
 isFocusableInTouchMode = false
 tag = "mom_inline_stream_button"
-setOnClickListener {
-if (muted) {
-muted = false
-exo?.volume = 1f
-text = "Full screen"
-} else {
-fullscreen = true
-oldUiFlags =
-activity.window.decorView.systemUiVisibility
-@Suppress("DEPRECATION")
-activity.window.decorView.systemUiVisibility =
-(View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-View.SYSTEM_UI_FLAG_FULLSCREEN or
-View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
-position(box)
-root.post {
-if (fullscreen) position(box)
-}
-visibility = View.GONE
-}
-}
+setOnClickListener { handleControlClick(box) }
 }
 button = control
 host.addView(
@@ -406,7 +369,6 @@ RelativeLayout.LayoutParams(dp(200), dp(120))
 )
 host.visibility = View.INVISIBLE
 position(box)
-
 val headers = mutableMapOf<String, String>()
 if (req.origin.startsWith("http://") ||
 req.origin.startsWith("https://")
@@ -443,7 +405,6 @@ MimeTypes.APPLICATION_MPD
 } else {
 MimeTypes.APPLICATION_M3U8
 }
-
 p.addListener(object : Player.Listener {
 override fun onPlaybackStateChanged(state: Int) {
 if (current?.url != req.url || exo !== p) return
@@ -526,7 +487,29 @@ TAG,
 "Waiting up to ${STARTUP_TIMEOUT_MS / 1000}s for initial stream readiness"
 )
 }
-
+private fun handleControlClick(box: Box) {
+if (muted) {
+muted = false
+exo?.volume = 1f
+button?.text = "Full screen"
+return
+}
+if (fullscreen) return
+fullscreen = true
+oldUiFlags = activity.window.decorView.systemUiVisibility
+@Suppress("DEPRECATION")
+activity.window.decorView.systemUiVisibility =
+(View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+View.SYSTEM_UI_FLAG_FULLSCREEN or
+View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+position(box)
+root.post { if (fullscreen) position(box) }
+button?.visibility = View.GONE
+onFullscreenRequested()
+}
 private fun scheduleBufferingRecovery(
 player: ExoPlayer,
 url: String
@@ -558,7 +541,6 @@ player.playWhenReady = true
 bufferingTimeout = task
 handler.postDelayed(task, REBUFFER_TIMEOUT_MS)
 }
-
 private fun cancelBufferingTimeout() {
 bufferingTimeout?.let { handler.removeCallbacks(it) }
 bufferingTimeout = null
@@ -567,7 +549,6 @@ private fun cancelTimeout() {
 timeout?.let { handler.removeCallbacks(it) }
 timeout = null
 }
-
 private fun position(box: Box) {
 if (!fullscreen) lastInlineBox = box
 val host = holder ?: return
@@ -623,9 +604,7 @@ lp.leftMargin = left
 lp.topMargin = top
 host.layoutParams = lp
 }
-
 fun isActive() = current != null
-
 fun handleBack(): Boolean {
 if (current == null) return false
 if (fullscreen) {
@@ -648,16 +627,13 @@ close(suppressCurrent = true)
 }
 return true
 }
-
 fun setMenuVisible(visible: Boolean) {
 menuVisible = visible
-holder?.visibility =
-if (ready) View.VISIBLE else View.INVISIBLE
+holder?.visibility = if (ready) View.VISIBLE else View.INVISIBLE
 consumingCursorTouch = false
 lastCursorX = Float.NaN
 lastCursorY = Float.NaN
 }
-
 fun close(suppressCurrent: Boolean = false) {
 root.removeOnLayoutChangeListener(playerLayoutListener)
 handler.removeCallbacks(startPending)
@@ -702,7 +678,6 @@ pending = null
 lastInlineBox = null
 if (wasReady) onActiveChanged(false)
 }
-
 fun reset() {
 close(suppressCurrent = false)
 boxes.clear()
