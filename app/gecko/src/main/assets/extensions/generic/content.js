@@ -48,7 +48,8 @@ communicatePort.onMessage.addListener(message => {
                 paused: v.paused,
                 muted: v.muted,
                 source: v.currentSrc,
-                userPaused: tvbroAutoplayInfo.get(v)?.userPaused
+                userPaused: tvbroAutoplayInfo.get(v)?.userPaused,
+                capturedAt: Date.now()
             });
 
             try {
@@ -71,6 +72,26 @@ communicatePort.onMessage.addListener(message => {
                 message.restorePlayback !== false &&
                 !state.paused &&
                 !v.ended) {
+                // The page's original video was paused while Media3 played.
+                // If that was a live HTML video, seek near its available live
+                // edge before resuming; otherwise it can replay an hour-old
+                // position when leaving the native overlay.
+                if (Date.now() - state.capturedAt > 60_000 &&
+                    !Number.isFinite(v.duration) &&
+                    v.seekable.length > 0) {
+                    try {
+                        const last = v.seekable.length - 1;
+                        const start = v.seekable.start(last);
+                        const end = v.seekable.end(last);
+                        if (Number.isFinite(end) &&
+                            end - v.currentTime > 30) {
+                            v.currentTime = Math.max(start, end - 3);
+                        }
+                    } catch (_) {
+                        // Some live players don't permit seeking; leave their
+                        // state unchanged rather than breaking their playback.
+                    }
+                }
                 try {
                     const result = v.play();
                     if (result && result.catch) result.catch(() => {});

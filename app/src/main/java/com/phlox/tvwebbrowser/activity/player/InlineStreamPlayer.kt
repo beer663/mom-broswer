@@ -24,6 +24,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.C
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -40,7 +41,8 @@ private val activity: AppCompatActivity,
 private val root: RelativeLayout,
 private val webView: () -> View?,
 private val onActiveChanged: (Boolean) -> Unit,
-private val onFailed: (String) -> Unit
+private val onFailed: (String) -> Unit,
+private val onFullscreenRequested: () -> Unit
 ) {
 private companion object {
 const val TAG = "MomBrowserMedia3"
@@ -370,6 +372,7 @@ exo?.volume = 1f
 text = "Full screen"
 } else {
 fullscreen = true
+onFullscreenRequested()
 oldUiFlags =
 activity.window.decorView.systemUiVisibility
 @Suppress("DEPRECATION")
@@ -626,10 +629,27 @@ host.layoutParams = lp
 
 fun isActive() = current != null
 
+// Keep the existing Media3 player when leaving fullscreen. If a live DVR
+// stream has slipped far behind its live edge, seek forward rather than
+// letting the user see a much older part of the broadcast.
+private fun catchUpLiveStreamOnFullscreenExit() {
+val player = exo ?: return
+if (!ready ||
+!player.isCommandAvailable(Player.COMMAND_GET_CURRENT_MEDIA_ITEM) ||
+!player.isCommandAvailable(Player.COMMAND_SEEK_TO_DEFAULT_POSITION) ||
+!player.isCurrentMediaItemLive
+) return
+val offsetMs = player.currentLiveOffset
+if (offsetMs == C.TIME_UNSET || offsetMs < 60_000L) return
+Log.i(TAG, "Live stream behind by ${offsetMs / 1000}s; seeking to live on fullscreen exit")
+player.seekToDefaultPosition()
+}
+
 fun handleBack(): Boolean {
 if (current == null) return false
 if (fullscreen) {
 fullscreen = false
+catchUpLiveStreamOnFullscreenExit()
 oldUiFlags?.let {
 activity.window.decorView.systemUiVisibility = it
 }
