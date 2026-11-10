@@ -1,9 +1,11 @@
 package com.phlox.tvwebbrowser.webengine.gecko
+
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.os.Handler
+import android.os.SystemClock
 import android.os.Looper
 import android.util.Log
 import android.view.View
@@ -44,20 +46,26 @@ import org.mozilla.geckoview.WebExtension.MessageDelegate
 
 class GeckoWebEngine(val tab: WebTabState) : WebEngine,
 CursorDrawerDelegate.Callback {
+
 companion object {
 const val ENGINE_NAME = "GeckoView"
 private const val APP_WEB_EXTENSION_VERSION = 64
 private const val ADGUARD_DNS_URL =
 "https://dns.adguard-dns.com/dns-query"
+
 val TAG: String = GeckoWebEngine::class.java.simpleName
 lateinit var runtime: GeckoRuntime
 var appWebExtension = ObservableValue<WebExtension?>(null)
+
 @Volatile
 var extensionBackgroundReady = false
+
 @Volatile
 var activeCallback: WebEngineWindowProviderCallback? = null
+
 var weakRefToSingleGeckoView:
 WeakReference<GeckoViewWithVirtualCursor?> = WeakReference(null)
+
 val uiHandler = Handler(Looper.getMainLooper())
 private val extensionInitialization = CompletableDeferred<Unit>()
 
@@ -68,6 +76,7 @@ webViewContainer: CursorLayout
 ) {
 if (!this::runtime.isInitialized) {
 val builder = GeckoRuntimeSettings.Builder()
+
 builder.aboutConfigEnabled(true)
 .preferredColorScheme(
 AppContext.provideConfig()
@@ -78,6 +87,7 @@ AppContext.provideConfig()
 .trustedRecursiveResolverMode(
 GeckoRuntimeSettings.TRR_MODE_ONLY
 )
+
 builder.contentBlocking(
 ContentBlocking.Settings.Builder()
 .antiTracking(
@@ -96,8 +106,10 @@ ContentBlocking.EtpLevel.DEFAULT
 )
 .build()
 )
+
 runtime = GeckoRuntime.create(context, builder.build())
 disableSoftwareAv1()
+
 val installResult =
 if (APP_WEB_EXTENSION_VERSION ==
 AppContext.provideConfig().appWebExtensionVersion
@@ -111,6 +123,7 @@ runtime.webExtensionController.installBuiltIn(
 "resource://android/assets/extensions/generic/"
 )
 }
+
 installResult.accept({ extension ->
 appWebExtension.value = extension
 AppContext.provideConfig().appWebExtensionVersion =
@@ -125,6 +138,7 @@ error
 extensionInitialization.complete(Unit)
 }
 }
+
 if (withTimeoutOrNull(20_000L) {
 extensionInitialization.await()
 true
@@ -132,6 +146,7 @@ true
 ) {
 Log.e(TAG, "Bundled extension initialization timed out")
 }
+
 val webView = GeckoViewWithVirtualCursor(context)
 webViewContainer.addView(webView)
 weakRefToSingleGeckoView = WeakReference(webView)
@@ -151,16 +166,20 @@ TAG,
 )
 return
 }
+
 Log.i(
 TAG,
 "No usable hardware AV1 decoder; attempting to disable software AV1"
 )
+
 val controller = Class.forName(
 "org.mozilla.geckoview.GeckoPreferenceController"
 )
+
 val branch = controller
 .getField("PREF_BRANCH_DEFAULT")
 .getInt(null)
+
 val method = controller.methods.firstOrNull {
 it.name == "setGeckoPref" &&
 it.parameterTypes.size == 3 &&
@@ -169,6 +188,7 @@ Boolean::class.javaPrimitiveType ||
 it.parameterTypes[1] ==
 Boolean::class.javaObjectType)
 }
+
 if (method == null) {
 Log.w(
 TAG,
@@ -176,12 +196,14 @@ TAG,
 )
 return
 }
+
 method.invoke(null, "media.av1.enabled", false, branch)
 Log.i(TAG, "AV1 preference update requested")
 } catch (e: Throwable) {
 Log.w(TAG, "Can not turn AV1 off", e)
 }
 }
+
 fun onThemeSettingUpdated(theme: Config.Theme) {
 runtime.settings.preferredColorScheme =
 theme.toGeckoPreferredColorScheme()
@@ -201,9 +223,11 @@ context,
 webViewContainer
 )
 }
+
 override fun createWebEngine(
 tab: WebTabState
 ): WebEngine = GeckoWebEngine(tab)
+
 override suspend fun clearCache(ctx: Context) {
 suspendCoroutine { cont ->
 runtime.storageController
@@ -219,9 +243,11 @@ GeckoResult.fromValue(null)
 })
 }
 }
+
 override fun onThemeSettingUpdated(value: Config.Theme) {
 GeckoWebEngine.onThemeSettingUpdated(value)
 }
+
 override fun getWebEngineVersionString(): String {
 return org.mozilla.geckoview.BuildConfig
 .LIBRARY_PACKAGE_NAME + ":" +
@@ -241,6 +267,7 @@ org.mozilla.geckoview.BuildConfig
 private var webView: GeckoViewWithVirtualCursor? = null
 lateinit var session: GeckoSession
 var callback: WebEngineWindowProviderCallback? = null
+
 val navigationDelegate = MyNavigationDelegate(this)
 val progressDelegate = MyProgressDelegate(this)
 val promptDelegate = MyPromptDelegate(this)
@@ -250,12 +277,16 @@ val historyDelegate = MyHistoryDelegate(this)
 val contentBlockingDelegate = MyContentBlockingDelegate(this)
 val mediaSessionDelegate = MyMediaSessionDelegate()
 val selectionActionDelegate = MySelectionActionDelegate()
+
 var appHomeContentScriptPortDelegate:
 AppHomeContentScriptPortDelegate? = null
+
 var appContentScriptPortDelegate:
 AppContentScriptPortDelegate? = null
+
 private val contentPortDelegates =
 mutableSetOf<AppContentScriptPortDelegate>()
+
 private var lastReportedVideoPresence = false
 private var browserInForeground = false
 private var pageRecoveryPending = false
@@ -266,9 +297,11 @@ pageRecoveryPending = true
 
 fun restoreCurrentPage(forceReload: Boolean = false) {
 val target = url?.takeIf { it.isNotBlank() } ?: tab.url
+
 try {
 if (!session.isOpen) session.open(runtime)
 val state = progressDelegate.sessionState
+
 if (!forceReload && state != null) {
 try {
 session.restoreState(state)
@@ -283,6 +316,7 @@ loadUrl(target)
 } else {
 loadUrl(target)
 }
+
 pageRecoveryPending = false
 } catch (error: Exception) {
 pageRecoveryPending = true
@@ -291,10 +325,12 @@ throw error
 }
 
 private var activityLifecycle: Lifecycle? = null
+
 private val activityObserver = object : DefaultLifecycleObserver {
 override fun onResume(owner: LifecycleOwner) {
 this@GeckoWebEngine.onResume()
 }
+
 override fun onPause(owner: LifecycleOwner) {
 this@GeckoWebEngine.onPause()
 }
@@ -302,6 +338,7 @@ this@GeckoWebEngine.onPause()
 
 fun onContentVideoStateChanged() {
 val present = contentPortDelegates.any { it.hasVideo }
+
 if (present != lastReportedVideoPresence) {
 lastReportedVideoPresence = present
 callback?.onVideoPresenceChanged(present)
@@ -312,10 +349,12 @@ override fun setNativeInlinePlayback(active: Boolean) {
 val canRestore = browserInForeground &&
 activityLifecycle?.currentState
 ?.isAtLeast(Lifecycle.State.RESUMED) == true
+
 val msg = JSONObject()
 .put("type", "nativeInlinePlayback")
 .put("active", active)
 .put("restorePlayback", canRestore)
+
 uiHandler.post {
 for (delegate in contentPortDelegates.toList()) {
 try {
@@ -331,6 +370,7 @@ private fun notifyBrowserForeground() {
 val msg = JSONObject()
 .put("type", "browserForeground")
 .put("foreground", browserInForeground)
+
 for (delegate in contentPortDelegates.toList()) {
 try {
 delegate.port.postMessage(msg)
@@ -344,14 +384,17 @@ fun onContentPortDisconnected(
 delegate: AppContentScriptPortDelegate
 ) {
 contentPortDelegates.remove(delegate)
+
 if (appContentScriptPortDelegate === delegate) {
 appContentScriptPortDelegate = null
 }
+
 onContentVideoStateChanged()
 }
 
 var appWebExtensionBackgroundPortDelegate:
 AppWebExtensionBackgroundPortDelegate? = null
+
 private lateinit var webExtObserver: (WebExtension?) -> Unit
 
 override val url: String?
@@ -374,6 +417,7 @@ tab.adblock ?: AppContext.provideConfig().adBlockEnabled
 )
 .build()
 )
+
 session.navigationDelegate = navigationDelegate
 session.progressDelegate = progressDelegate
 session.contentDelegate = contentDelegate
@@ -383,12 +427,14 @@ session.historyDelegate = historyDelegate
 session.contentBlockingDelegate = contentBlockingDelegate
 session.mediaSessionDelegate = mediaSessionDelegate
 session.selectionActionDelegate = selectionActionDelegate
+
 webExtObserver = { ext: WebExtension? ->
 if (ext != null) {
 connectToAppWebExtension(ext)
 appWebExtension.unsubscribe(webExtObserver)
 }
 }
+
 appWebExtension.subscribe(webExtObserver)
 }
 
@@ -401,6 +447,7 @@ nativeApp: String,
 message: Any,
 sender: WebExtension.MessageSender
 ): GeckoResult<Any>? = null
+
 override fun onConnect(port: WebExtension.Port) {
 appContentScriptPortDelegate =
 AppContentScriptPortDelegate(
@@ -415,6 +462,7 @@ notifyBrowserForeground()
 },
 "tvbro_content"
 )
+
 session.webExtensionController.setMessageDelegate(
 extension,
 object : MessageDelegate {
@@ -423,6 +471,7 @@ nativeApp: String,
 message: Any,
 sender: WebExtension.MessageSender
 ): GeckoResult<Any>? = null
+
 override fun onConnect(port: WebExtension.Port) {
 appHomeContentScriptPortDelegate =
 AppHomeContentScriptPortDelegate(
@@ -435,6 +484,7 @@ port.setDelegate(it)
 },
 "tvbro"
 )
+
 extension.setMessageDelegate(
 object : MessageDelegate {
 override fun onMessage(
@@ -442,8 +492,10 @@ nativeApp: String,
 message: Any,
 sender: WebExtension.MessageSender
 ): GeckoResult<Any>? = null
+
 override fun onConnect(port: WebExtension.Port) {
 extensionBackgroundReady = true
+
 appWebExtensionBackgroundPortDelegate =
 AppWebExtensionBackgroundPortDelegate(
 port,
@@ -467,10 +519,13 @@ return null
 override fun restoreState(savedInstanceState: Any) {
 if (savedInstanceState is SessionState) {
 progressDelegate.sessionState = savedInstanceState
+
 if (!session.isOpen) session.open(runtime)
+
 session.restoreState(savedInstanceState)
 pageRecoveryPending = false
 homeLoadToken++
+
 if (!extensionBackgroundReady) {
 reloadHomePageOnceExtensionReady(homeLoadToken)
 }
@@ -501,6 +556,7 @@ attempt: Int = 0
 ) {
 if (token != homeLoadToken || !session.isOpen) return
 val view = webView
+
 if (extensionBackgroundReady &&
 view != null &&
 view.isAttachedToWindow &&
@@ -536,6 +592,7 @@ attempt: Int = 0
 ) {
 if (token != homeLoadToken || !session.isOpen) return
 val view = webView
+
 if (extensionBackgroundReady &&
 view != null &&
 view.isAttachedToWindow &&
@@ -560,13 +617,16 @@ reloadHomePageOnceExtensionReady(token, attempt + 1)
 override fun loadUrl(url: String) {
 if (!session.isOpen) session.open(runtime)
 homeLoadToken++
+
 if (Config.HOME_URL_ALIAS == url) {
 when (AppContext.provideConfig().homePageMode) {
 Config.HomePageMode.BLANK -> {}
+
 Config.HomePageMode.CUSTOM,
 Config.HomePageMode.SEARCH_ENGINE -> {
 session.loadUri(AppContext.provideConfig().homePage)
 }
+
 Config.HomePageMode.HOME_PAGE -> {
 loadHomePageWhenExtensionReady(homeLoadToken)
 }
@@ -578,17 +638,23 @@ session.loadUri(url)
 
 override fun canGoForward(): Boolean =
 navigationDelegate.canGoForward
+
 override fun goForward() {
 session.goForward()
 }
+
 override fun canZoomIn(): Boolean = true
+
 override fun zoomIn() {
 webView?.cursorDrawerDelegate?.tryZoomIn()
 }
+
 override fun canZoomOut(): Boolean = true
+
 override fun zoomOut() {
 webView?.cursorDrawerDelegate?.tryZoomOut()
 }
+
 override fun zoomBy(zoomBy: Float) {}
 
 override fun evaluateJavascript(script: String) {
@@ -602,6 +668,7 @@ override fun getView(): View? = webView
 override fun getOrCreateView(activityContext: Context): View {
 if (webView == null) {
 val geckoView = weakRefToSingleGeckoView.get()
+
 webView = if (geckoView == null) {
 val wv = GeckoViewWithVirtualCursor(activityContext)
 weakRefToSingleGeckoView = WeakReference(wv)
@@ -612,11 +679,13 @@ geckoView
 it.cursorDrawerDelegate.callback = this
 }
 }
+
 return webView!!
 }
 
 override fun canGoBack(): Boolean =
 navigationDelegate.canGoBack
+
 override fun goBack() {
 session.goBack()
 }
@@ -624,15 +693,19 @@ session.goBack()
 override fun reload() {
 val enabled =
 tab.adblock ?: AppContext.provideConfig().adBlockEnabled
+
 if (session.settings.useTrackingProtection != enabled) {
 session.settings.useTrackingProtection = enabled
 }
+
 if (!session.isOpen || pageRecoveryPending) {
 callback?.onPageStarted(url ?: tab.url)
+
 try {
 restoreCurrentPage(forceReload = true)
 } catch (error: Exception) {
 Log.e(TAG, "Could not reload closed page session", error)
+
 callback?.getActivity()?.let { activity ->
 android.widget.Toast.makeText(
 activity,
@@ -653,6 +726,7 @@ promptDelegate.onFileCallbackResult(resultCode, data)
 override fun onResume() {
 browserInForeground = true
 notifyBrowserForeground()
+
 if (pageRecoveryPending) {
 try {
 restoreCurrentPage()
@@ -662,10 +736,12 @@ return
 }
 } else if (!session.isOpen) {
 session.open(runtime)
+
 progressDelegate.sessionState?.let {
 session.restoreState(it)
 }
 }
+
 session.setFocused(true)
 }
 
@@ -673,29 +749,36 @@ override fun onPause() {
 browserInForeground = false
 notifyBrowserForeground()
 session.setFocused(false)
+
 mediaSessionDelegate.mediaSession?.let {
 if (!mediaSessionDelegate.paused) it.pause()
 }
 }
 
 override fun onUpdateAdblockSetting(newState: Boolean) {}
+
 override fun hideFullscreenView() {
 session.exitFullScreen()
 }
+
 override fun togglePlayback() {
 mediaSessionDelegate.mediaSession?.let {
 if (mediaSessionDelegate.paused) it.play() else it.pause()
 }
 }
+
 override fun stopPlayback() {
 mediaSessionDelegate.mediaSession?.stop()
 }
+
 override fun rewind() {
 mediaSessionDelegate.mediaSession?.seekBackward()
 }
+
 override fun fastForward() {
 mediaSessionDelegate.mediaSession?.seekForward()
 }
+
 override suspend fun renderThumbnail(bitmap: Bitmap?): Bitmap? {
 return webView?.renderThumbnail(bitmap)
 }
@@ -706,28 +789,39 @@ parent: ViewGroup
 ) {
 this.callback = callback
 activeCallback = callback
+
 activityLifecycle?.removeObserver(activityObserver)
+
 activityLifecycle =
 (callback.getActivity() as? LifecycleOwner)?.lifecycle
+
 browserInForeground = activityLifecycle?.currentState
 ?.isAtLeast(Lifecycle.State.RESUMED) == true
+
 activityLifecycle?.addObserver(activityObserver)
 notifyBrowserForeground()
+
 val webView = this.webView
 ?: throw IllegalStateException("WebView is null")
+
 val previousSession = webView.session
+
 if (previousSession != null && previousSession != session) {
 previousSession.setActive(false)
 webView.releaseSession()
 }
+
 val isNightMode =
 (callback.getActivity().resources.configuration.uiMode and
 Configuration.UI_MODE_NIGHT_MASK) ==
 Configuration.UI_MODE_NIGHT_YES
+
 webView.coverUntilFirstPaint(
 if (isNightMode) 0xFF1B1B1B.toInt() else 0xFFE4E2DD.toInt()
 )
+
 webView.setSession(session)
+
 if (session.isOpen &&
 previousSession != null &&
 previousSession != session
@@ -743,19 +837,25 @@ destroyTab: Boolean
 ) {
 browserInForeground = false
 notifyBrowserForeground()
+
 activityLifecycle?.removeObserver(activityObserver)
 activityLifecycle = null
+
 val detachingCallback = callback
 if (activeCallback === detachingCallback) {
 activeCallback = null
 }
+
 callback = null
 val view = webView
+
 if (view != null && view.session == session) {
 view.session?.setActive(false)
 view.releaseSession()
 }
+
 if (completely) webView = null
+
 if (destroyTab) {
 homeLoadToken++
 mediaSessionDelegate.mediaSession?.stop()
@@ -765,6 +865,7 @@ session.close()
 
 override fun trimMemory() {
 val currentView = webView
+
 if (currentView != null && !currentView.isAttachedToWindow) {
 webView = null
 }
@@ -789,7 +890,38 @@ return internalRepresentation is GeckoSession &&
 internalRepresentation == session
 }
 
+private var homeBookmarkHoldHandledAt: Long? = null
+
+fun onHomeBookmarkHoldHandled() {
+homeBookmarkHoldHandledAt = SystemClock.elapsedRealtime()
+}
+
 override fun onLongPress(x: Int, y: Int) {
+val homeUrl = url ?: tab.url
+
+val isHome = homeUrl == Config.HOME_URL_ALIAS ||
+homeUrl.substringBefore('#').substringBefore('?').trimEnd('/') ==
+Config.HOME_PAGE_URL.trimEnd('/')
+
+val view = webView
+
+if (isHome &&
+view != null &&
+view.width > 0 &&
+view.height > 0) {
+if (homeBookmarkHoldHandledAt?.let {
+SystemClock.elapsedRealtime() - it < 1500L
+} == true) return
+
+evaluateJavascript(
+"if (typeof editHomeBookmarkAt === 'function') " +
+"editHomeBookmarkAt($x * window.innerWidth / ${view.width}, " +
+"$y * window.innerHeight / ${view.height});"
+)
+
+return
+}
+
 uiHandler.postDelayed({
 callback?.onContextMenu(
 webView!!.cursorDrawerDelegate,
