@@ -1,4 +1,3 @@
-
 package com.phlox.tvwebbrowser.webengine.gecko.delegates
 
 import android.graphics.Bitmap
@@ -45,7 +44,9 @@ class AppHomeContentScriptPortDelegate(
                     links = links.replace("'", "\\'")
 
                     if (Utils.isFireTV(AppContext.get())) {
-                        webEngine.evaluateJavascript("hideVoiceSearchUI()")
+                        webEngine.evaluateJavascript(
+                            "hideVoiceSearchUI()"
+                        )
                     }
 
                     webEngine.evaluateJavascript(
@@ -59,13 +60,19 @@ class AppHomeContentScriptPortDelegate(
 
                 "setSearchEngine" -> {
                     val data = msgJson.getJSONObject("data")
-                    val customSearchEngineURL = data.getString("customSearchEngineURL")
-                    AppContext.provideConfig().searchEngineURL.value = customSearchEngineURL
+
+                    val customSearchEngineURL =
+                        data.getString("customSearchEngineURL")
+
+                    AppContext.provideConfig().searchEngineURL.value =
+                        customSearchEngineURL
                 }
 
                 "onEditBookmark" -> {
                     val index = msgJson.getInt("data")
                     val callback = webEngine.callback ?: return
+
+                    webEngine.onHomeBookmarkHoldHandled()
 
                     callback.getActivity().runOnUiThread {
                         callback.onEditHomePageBookmarkSelected(index)
@@ -84,13 +91,15 @@ class AppHomeContentScriptPortDelegate(
                                 msg.put("action", "favicon")
 
                                 val faviconBytes = ByteArrayOutputStream()
+
                                 favicon.compress(
                                     Bitmap.CompressFormat.PNG,
                                     100,
                                     faviconBytes
                                 )
 
-                                val faviconBase64 = "data:image/png;base64," +
+                                val faviconBase64 =
+                                    "data:image/png;base64," +
                                     Base64.encodeToString(
                                         faviconBytes.toByteArray(),
                                         Base64.DEFAULT
@@ -98,7 +107,9 @@ class AppHomeContentScriptPortDelegate(
 
                                 msg.put(
                                     "data",
-                                    JSONObject().put("url", url).put("data", faviconBase64)
+                                    JSONObject()
+                                        .put("url", url)
+                                        .put("data", faviconBase64)
                                 )
 
                                 port.postMessage(msg)
@@ -109,7 +120,10 @@ class AppHomeContentScriptPortDelegate(
                 "markBookmarkRecommendationAsUseful" -> {
                     val bookmarkOrder = msgJson.getInt("data")
                     val callback = webEngine.callback ?: return
-                    callback.markBookmarkRecommendationAsUseful(bookmarkOrder)
+
+                    callback.markBookmarkRecommendationAsUseful(
+                        bookmarkOrder
+                    )
                 }
             }
         } catch (_: Exception) {
