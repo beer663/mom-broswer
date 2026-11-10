@@ -6,142 +6,480 @@
 <meta name="color-scheme" content="light">
 <title>Home</title>
 <style>
-  :root { color-scheme: light; }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: #E4E2DD; color: #202124;
-    font-family: Roboto, "Helvetica Neue", Arial, sans-serif; }
-  main { max-width: 960px; margin: 0 auto; padding: 8vh 24px 48px; }
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
 
-  form { display: flex; justify-content: center; margin-bottom: 56px; }
-  .box { display: flex; align-items: center; width: 100%; max-width: 640px;
-    border: 1px solid #C9C7C1; border-radius: 28px; padding: 0 20px; background: #EFEDE8; }
-  .box:focus-within { border-color: #4285f4; box-shadow: 0 1px 6px rgba(32,33,36,.28); }
-  input[type=search] { flex: 1; border: 0; outline: 0; background: transparent;
-    font-size: 20px; padding: 16px 0; color: #202124; min-width: 0; }
-  button { border: 0; background: transparent; cursor: pointer; padding: 8px; border-radius: 50%; }
-  button:focus { outline: 2px solid #4285f4; }
-  button svg { width: 24px; height: 24px; fill: #5f6368; display: block; }
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #E4E2DD;
+  color: #202124;
+  font-family: Roboto, "Helvetica Neue", Arial, sans-serif;
+}
 
-  #links { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 20px; justify-items: center; }
-  a.tile { display: flex; flex-direction: column; align-items: center; width: 150px;
-    padding: 12px 6px; border-radius: 14px; text-decoration: none; color: #202124; }
-  a.tile:hover, a.tile:focus { background: #D8D6D0; outline: 2px solid #4285f4; }
-  .icon { width: 84px; height: 84px; border-radius: 16px; background: #D8D6D0;
-    display: flex; align-items: center; justify-content: center; overflow: hidden;
-    font-size: 36px; font-weight: 500; color: #5f6368; flex-shrink: 0; }
-  .icon img { width: 52px; height: 52px; object-fit: contain; }
-  .label { 
-    margin-top: 10px; 
-    font-size: 16px; 
-    line-height: 1.2;
-    text-align: center; 
-    width: 100%;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    word-break: break-word;
-  }
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 8vh 24px 48px;
+}
+
+form {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 56px;
+}
+
+.box {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 640px;
+  border: 1px solid #C9C7C1;
+  border-radius: 28px;
+  padding: 0 20px;
+  background: #EFEDE8;
+}
+
+.box:focus-within {
+  border-color: #4285f4;
+  box-shadow: 0 1px 6px rgba(32,33,36,.28);
+}
+
+input[type=search] {
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-size: 20px;
+  padding: 16px 0;
+  color: #202124;
+  min-width: 0;
+}
+
+button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 50%;
+}
+
+button:focus {
+  outline: 2px solid #4285f4;
+}
+
+button svg {
+  width: 24px;
+  height: 24px;
+  fill: #5f6368;
+  display: block;
+}
+
+#links {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 20px;
+  justify-items: center;
+}
+
+a.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 150px;
+  padding: 12px 6px;
+  border-radius: 14px;
+  text-decoration: none;
+  color: #202124;
+}
+
+a.tile:hover, a.tile:focus {
+  background: #D8D6D0;
+  outline: 2px solid #4285f4;
+}
+
+.icon {
+  width: 84px;
+  height: 84px;
+  border-radius: 16px;
+  background: #D8D6D0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-size: 36px;
+  font-weight: 500;
+  color: #5f6368;
+  flex-shrink: 0;
+}
+
+.icon img {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+}
+
+.label {
+  margin-top: 10px;
+  font-size: 16px;
+  line-height: 1.2;
+  text-align: center;
+  width: 100%;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
+}
 </style>
 </head>
 <body>
 <main>
   <form action="https://www.google.com/search" method="get" role="search">
     <div class="box">
-      <input type="search" name="q" placeholder="Search Google" autocomplete="off" aria-label="Search Google">
+      <input
+        type="search"
+        name="q"
+        placeholder="Search Google"
+        autocomplete="off"
+        aria-label="Search Google">
       <button type="submit" aria-label="Search">
-        <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+        <svg viewBox="0 0 24 24">
+          <path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+        </svg>
       </button>
     </div>
   </form>
+
   <nav id="links" aria-label="Bookmarks"></nav>
+
+  <p
+    id="bookmark-hint"
+    style="text-align:center;color:#5f6368;margin-top:28px"
+    hidden>
+    Hold OK on a saved tile, then choose Delete to remove it.
+  </p>
 </main>
 
 <script>
-  // ---- Hooks called by the app (WebView and GeckoView) ----
-  var faviconTiles = {}; // url -> icon element (GeckoView favicon requests)
+var faviconTiles = {};
 
-  function hostOf(url) {
-    try { return new URL(url).hostname; } catch (e) { return ""; }
+function hostOf(url) {
+  try {
+    return new URL(url).hostname;
+  } catch (e) {
+    return "";
+  }
+}
+
+function setLetter(icon, title) {
+  icon.textContent =
+    (title || "?").trim().charAt(0).toUpperCase() || "?";
+}
+
+function setImage(icon, src, title) {
+  var img = new Image();
+
+  img.onload = function () {
+    icon.textContent = "";
+    icon.appendChild(img);
+  };
+
+  img.onerror = function () {
+    setLetter(icon, title);
+  };
+
+  img.src = src;
+}
+
+function onFaviconLoaded(url, data) {
+  var icon = faviconTiles[url];
+  if (icon) {
+    setImage(icon, data, icon.getAttribute("data-title"));
+  }
+}
+
+var homeHold = null;
+var homeBlockedTile = null;
+var homeLastEditAt = -Infinity;
+var homeLastTouchAt = -Infinity;
+var HOME_HOLD_MS = 400;
+
+function homeCancelHold() {
+  if (homeHold) clearTimeout(homeHold.timer);
+  homeHold = null;
+}
+
+function homeTileFrom(target) {
+  return target && target.closest
+    ? target.closest("a.tile[data-order]")
+    : null;
+}
+
+function homeEditTile(tile) {
+  if (!tile || !tile.isConnected || !window.TVBro ||
+      typeof TVBro.onEditBookmark !== "function") {
+    return false;
   }
 
-  function setLetter(icon, title) {
-    icon.textContent = (title || "?").trim().charAt(0).toUpperCase() || "?";
+  if (homeBlockedTile === tile) return true;
+
+  var order = Number(tile.getAttribute("data-order"));
+  if (!Number.isInteger(order)) return false;
+
+  homeCancelHold();
+  homeBlockedTile = tile;
+  homeLastEditAt = Date.now();
+  TVBro.onEditBookmark(order);
+  return true;
+}
+
+function editHomeBookmarkAt(x, y) {
+  if (Date.now() - homeLastEditAt < 1200) return true;
+
+  return homeEditTile(
+    homeTileFrom(document.elementFromPoint(x, y))
+  );
+}
+
+function homeStartHold(tile, x, y) {
+  homeCancelHold();
+  homeBlockedTile = null;
+
+  if (!tile) return;
+
+  homeHold = {
+    tile: tile,
+    x: x,
+    y: y,
+    timer: null
+  };
+
+  homeHold.timer = setTimeout(function () {
+    if (homeHold) homeEditTile(homeHold.tile);
+  }, HOME_HOLD_MS);
+}
+
+function homeMoveHold(x, y) {
+  if (homeHold &&
+      (Math.abs(x - homeHold.x) > 12 ||
+       Math.abs(y - homeHold.y) > 12)) {
+    homeCancelHold();
   }
+}
 
-  function setImage(icon, src, title) {
-    var img = new Image();
-    img.onload = function () { icon.textContent = ""; icon.appendChild(img); };
-    img.onerror = function () { setLetter(icon, title); };
-    img.src = src;
+if (window.PointerEvent) {
+  document.addEventListener("pointerdown", function (e) {
+    if (e.isPrimary === false) {
+      homeCancelHold();
+      return;
+    }
+
+    homeStartHold(
+      homeTileFrom(e.target),
+      e.clientX,
+      e.clientY
+    );
+
+    if (e.button !== 0) homeCancelHold();
+  }, true);
+
+  document.addEventListener("pointermove", function (e) {
+    homeMoveHold(e.clientX, e.clientY);
+  }, true);
+
+  document.addEventListener("pointerup", homeCancelHold, true);
+  document.addEventListener("pointercancel", homeCancelHold, true);
+} else {
+  document.addEventListener("mousedown", function (e) {
+    if (Date.now() - homeLastTouchAt < 1000) return;
+
+    homeStartHold(
+      homeTileFrom(e.target),
+      e.clientX,
+      e.clientY
+    );
+
+    if (e.button !== 0) homeCancelHold();
+  }, true);
+
+  document.addEventListener("mousemove", function (e) {
+    homeMoveHold(e.clientX, e.clientY);
+  }, true);
+
+  document.addEventListener("mouseup", homeCancelHold, true);
+
+  document.addEventListener("touchstart", function (e) {
+    homeLastTouchAt = Date.now();
+
+    if (e.touches.length !== 1) {
+      homeCancelHold();
+      return;
+    }
+
+    homeStartHold(
+      homeTileFrom(e.target),
+      e.touches[0].clientX,
+      e.touches[0].clientY
+    );
+  }, { capture: true, passive: true });
+
+  document.addEventListener("touchmove", function (e) {
+    if (e.touches.length === 1) {
+      homeMoveHold(
+        e.touches[0].clientX,
+        e.touches[0].clientY
+      );
+    } else {
+      homeCancelHold();
+    }
+  }, { capture: true, passive: true });
+
+  ["touchend", "touchcancel"].forEach(function (type) {
+    document.addEventListener(type, function () {
+      homeLastTouchAt = Date.now();
+      homeCancelHold();
+    }, true);
+  });
+}
+
+function homeIsOK(e) {
+  return e.key === "Enter" ||
+    e.key === " " ||
+    e.keyCode === 13 ||
+    e.keyCode === 23;
+}
+
+document.addEventListener("keydown", function (e) {
+  var tile = homeTileFrom(e.target);
+  if (!tile || !homeIsOK(e)) return;
+
+  e.preventDefault();
+
+  if (!e.repeat && !homeHold) {
+    homeStartHold(tile, 0, 0);
   }
+}, true);
 
-  // Called by GeckoView with the favicon as a data: URL
-  function onFaviconLoaded(url, data) {
-    var icon = faviconTiles[url];
-    if (icon) setImage(icon, data, icon.getAttribute("data-title"));
+document.addEventListener("keyup", function (e) {
+  var tile = homeTileFrom(e.target);
+  if (!tile || !homeIsOK(e)) return;
+
+  e.preventDefault();
+
+  var shortPress = homeHold && homeHold.tile === tile;
+  homeCancelHold();
+
+  if (shortPress && homeBlockedTile !== tile) {
+    tile.click();
   }
+}, true);
 
-  // Called by the app after onHomePageLoaded(). Mode is ignored: show whatever the app sends.
-  function renderLinks(mode, links) {
-    var container = document.getElementById("links");
-    container.textContent = "";
-    faviconTiles = {};
-    var hasGeckoFavicons = window.TVBro && typeof TVBro.requestFavicon === "function";
+document.addEventListener("click", function (e) {
+  var tile = homeTileFrom(e.target);
 
-    (links || []).forEach(function (link) {
-      var host = hostOf(link.url);
-      var title = link.title || host || link.url;
+  if (tile && homeBlockedTile === tile) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }
+}, true);
 
-      var a = document.createElement("a");
-      a.className = "tile";
-      a.href = link.url;
-      a.title = title;
+document.addEventListener("contextmenu", function (e) {
+  var tile = homeTileFrom(e.target);
 
-      var icon = document.createElement("div");
-      icon.className = "icon";
-      icon.setAttribute("data-title", title);
-      setLetter(icon, title);
-      a.appendChild(icon);
+  if (tile) {
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    homeEditTile(tile);
+  }
+}, true);
 
-      var label = document.createElement("div");
-      label.className = "label";
-      label.textContent = title;
-      a.appendChild(label);
+document.addEventListener("focusout", homeCancelHold, true);
+window.addEventListener("blur", homeCancelHold);
+window.addEventListener("pagehide", homeCancelHold);
 
-      // Long-press / context menu edits the bookmark
-      if (link.order !== null && link.order !== undefined && window.TVBro && TVBro.onEditBookmark) {
-        a.addEventListener("contextmenu", function (e) {
-          e.preventDefault();
-          TVBro.onEditBookmark(link.order);
-        });
+window.addEventListener(
+  "scroll",
+  homeCancelHold,
+  { passive: true }
+);
+
+document.addEventListener("visibilitychange", function () {
+  if (document.hidden) homeCancelHold();
+});
+
+function renderLinks(mode, links) {
+  homeCancelHold();
+  homeBlockedTile = null;
+
+  var container = document.getElementById("links");
+  container.textContent = "";
+  faviconTiles = {};
+
+  var hasGeckoFavicons = window.TVBro &&
+    typeof TVBro.requestFavicon === "function";
+
+  (links || []).forEach(function (link) {
+    var host = hostOf(link.url);
+    var title = link.title || host || link.url;
+
+    var a = document.createElement("a");
+    a.className = "tile";
+    a.href = link.url;
+    a.title = title;
+
+    var icon = document.createElement("div");
+    icon.className = "icon";
+    icon.setAttribute("data-title", title);
+    setLetter(icon, title);
+    a.appendChild(icon);
+
+    var label = document.createElement("div");
+    label.className = "label";
+    label.textContent = title;
+    a.appendChild(label);
+
+    if (link.order !== null && link.order !== undefined) {
+      a.setAttribute("data-order", String(link.order));
+      a.setAttribute(
+        "aria-description",
+        "Hold OK for bookmark options"
+      );
+    }
+
+    container.appendChild(a);
+
+    if (host) {
+      if (hasGeckoFavicons) {
+        faviconTiles[link.url] = icon;
+        TVBro.requestFavicon(link.url);
+      } else {
+        setImage(icon, "favicon://" + host, title);
       }
+    }
+  });
 
-      container.appendChild(a);
+  document.getElementById("bookmark-hint").hidden =
+    !container.querySelector("a.tile[data-order]");
+}
 
-      if (host) {
-        if (hasGeckoFavicons) {
-          faviconTiles[link.url] = icon;
-          TVBro.requestFavicon(link.url);
-        } else {
-          setImage(icon, "favicon://" + host, title);
-        }
-      }
-    });
+function applySearchEngine(name, url) {}
+function hideVoiceSearchUI() {}
+
+(function () {
+  function ready() {
+    if (window.TVBro && TVBro.onHomePageLoaded) {
+      TVBro.onHomePageLoaded();
+    }
   }
 
-  // Search engine is fixed to Google on this page; nothing to apply.
-  function applySearchEngine(name, url) {}
-  function hideVoiceSearchUI() {}
-
-  // Tell the app we're ready so it sends the bookmarks
-  (function () {
-    function ready() { if (window.TVBro && TVBro.onHomePageLoaded) TVBro.onHomePageLoaded(); }
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", ready);
-    else ready();
-  })();
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", ready);
+  } else {
+    ready();
+  }
+})();
 </script>
 </body>
 </html>
