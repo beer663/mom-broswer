@@ -24,6 +24,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.C
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -66,6 +67,9 @@ val userAgent: String?
 private val handler = Handler(Looper.getMainLooper())
 private val boxes = mutableMapOf<String, Box>()
 private val cooldown = mutableMapOf<String, Long>()
+    // Do not automatically reopen a stream after Media3 failed or the user exited it.
+    // A different playlist URL can still be attempted by Media3.
+    private val skippedMedia3Urls = mutableSetOf<String>()
 private var pending: Request? = null
 private var pendingReadyAt = 0L
 private var current: Request? = null
@@ -233,6 +237,10 @@ fun detect(url: String, origin: String, userAgent: String?) {
 if (!isPlaylist(url)) return
 val now = SystemClock.uptimeMillis()
 if ((cooldown[url] ?: 0L) > now) return
+if (url in skippedMedia3Urls) {
+    Log.d(TAG, "Already exited/failed this stream; leaving it with the website player")
+    return
+}
 if (current?.url == url || pending?.url == url) return
 pending = Request(url, origin, userAgent)
 pendingReadyAt = now + 750L
@@ -551,11 +559,10 @@ attemptedBufferingRecovery
 attemptedBufferingRecovery = true
 Log.w(
 TAG,
-"Stream stalled after playback; attempting one Media3 reconnect"
+"Stream buffered for ${REBUFFER_TIMEOUT_MS / 1000}s after READY; using website player"
 )
-player.stop()
-player.prepare()
-player.playWhenReady = true
+onFailed(url)
+close(suppressCurrent = true)
 }
 bufferingTimeout = task
 handler.postDelayed(task, REBUFFER_TIMEOUT_MS)
@@ -628,10 +635,27 @@ host.layoutParams = lp
 
 fun isActive() = current != null
 
+// Keep the existing Media3 player when leaving fullscreen. If a live DVR
+// stream has slipped far behind its live edge, seek forward rather than
+// letting the user see a much older part of the broadcast.
+private fun catchUpLiveStreamOnFullscreenExit() {
+val player = exo ?: return
+if (!ready ||
+!player.isCommandAvailable(Player.COMMAND_GET_CURRENT_MEDIA_ITEM) ||
+!player.isCommandAvailable(Player.COMMAND_SEEK_TO_DEFAULT_POSITION) ||
+!player.isCurrentMediaItemLive
+) return
+val offsetMs = player.currentLiveOffset
+if (offsetMs == C.TIME_UNSET || offsetMs < 60_000L) return
+Log.i(TAG, "Live stream behind by ${offsetMs / 1000}s; seeking to live on fullscreen exit")
+player.seekToDefaultPosition()
+}
+
 fun handleBack(): Boolean {
 if (current == null) return false
 if (fullscreen) {
 fullscreen = false
+catchUpLiveStreamOnFullscreenExit()
 oldUiFlags?.let {
 activity.window.decorView.systemUiVisibility = it
 }
@@ -668,8 +692,8 @@ cancelBufferingTimeout()
 attemptedBufferingRecovery = false
 if (suppressCurrent) {
 current?.url?.let {
-cooldown[it] =
-SystemClock.uptimeMillis() + 120000L
+    skippedMedia3Urls.add(it)
+    cooldown[it] = SystemClock.uptimeMillis() + 120000L
 }
 }
 if (fullscreen) {
