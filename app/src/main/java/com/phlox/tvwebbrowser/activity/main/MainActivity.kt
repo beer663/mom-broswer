@@ -1486,12 +1486,7 @@ y: Double,
 width: Double,
 height: Double,
 viewportWidth: Double,
-viewportHeight: Double,
-clipX: Double,
-clipY: Double,
-clipWidth: Double,
-clipHeight: Double,
-measuredAt: Long
+viewportHeight: Double
 ) {
 if (tabsModel.currentTab.value !== tab ||
 !config.isWebEngineGecko()) return
@@ -1503,12 +1498,7 @@ y,
 width,
 height,
 viewportWidth,
-viewportHeight,
-clipX,
-clipY,
-clipWidth,
-clipHeight,
-measuredAt
+viewportHeight
 )
 }
 
