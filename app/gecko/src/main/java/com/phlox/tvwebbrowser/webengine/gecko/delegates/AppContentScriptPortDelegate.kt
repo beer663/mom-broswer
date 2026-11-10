@@ -10,20 +10,40 @@ class AppContentScriptPortDelegate(
 ) : WebExtension.PortDelegate {
 
     var hasVideo = false
+    private var frameId: String? = null
 
     override fun onPortMessage(message: Any, port: WebExtension.Port) {
         try {
             val json = message as? JSONObject ?: return
 
             when (json.optString("type")) {
+                "inlineFrameReady" -> {
+                    val id = json.optString("frameId")
+                    if (frameId == null && id.isNotBlank() && id.length <= 128) {
+                        frameId = id
+                    }
+                }
+
+                "inlineFrameReleased" -> {
+                    val id = frameId ?: return
+                    if (json.optString("frameId") != id) return
+                    webEngine.callback?.onInlineFrameReleased(
+                        id,
+                        json.optString("reason") == "replacement"
+                    )
+                }
+
                 "nativeStreamDetected" -> {
                     val url = json.optString("url")
                     val origin = json.optString("origin")
+                    val id = frameId ?: return
+                    if (json.optString("frameId") != id) return
 
                     if (url.isNotBlank() && origin.isNotBlank()) {
                         webEngine.callback?.onNativeStreamDetected(
                             url,
-                            origin
+                            origin,
+                            id
                         )
                     }
                 }
@@ -35,7 +55,8 @@ class AppContentScriptPortDelegate(
 
                 "inlineVideoRect" -> {
                     val frameUrl = json.optString("frameUrl")
-                    if (frameUrl.length > 2048) return
+                    val id = json.optString("frameId")
+                    if (frameUrl.length > 2048 || id.isBlank() || id.length > 128) return
 
                     val x = json.optDouble("x")
                     val y = json.optDouble("y")
@@ -54,7 +75,8 @@ class AppContentScriptPortDelegate(
                         json.optDouble("clipY", y),
                         json.optDouble("clipWidth", width),
                         json.optDouble("clipHeight", height),
-                        json.optLong("measuredAt", 0L)
+                        json.optLong("measuredAt", 0L),
+                        id
                     )
                 }
             }
@@ -64,6 +86,7 @@ class AppContentScriptPortDelegate(
     }
 
     override fun onDisconnect(port: WebExtension.Port) {
+        frameId?.let { webEngine.callback?.onInlineFrameReleased(it, false) }
         webEngine.onContentPortDisconnected(this)
     }
 }
