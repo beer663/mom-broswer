@@ -74,7 +74,8 @@ interface WebEngineWindowProviderCallback {
     fun getHomePageLinks(): List<HomePageLink>
 
     fun onVideoPresenceChanged(present: Boolean) {}
-    fun onNativeStreamDetected(url: String, origin: String) {}
+    fun onNativeStreamDetected(url: String, origin: String, frameId: String) {}
+    fun onInlineFrameReleased(frameId: String, fallbackToHtml: Boolean) {}
 
     fun onInlineVideoRect(
         frameUrl: String,
@@ -88,7 +89,8 @@ interface WebEngineWindowProviderCallback {
         clipY: Double = y,
         clipWidth: Double = width,
         clipHeight: Double = height,
-        measuredAt: Long = 0L
+        measuredAt: Long = 0L,
+        frameId: String = ""
     ) {}
 
     fun onPrepareForFullscreen()
