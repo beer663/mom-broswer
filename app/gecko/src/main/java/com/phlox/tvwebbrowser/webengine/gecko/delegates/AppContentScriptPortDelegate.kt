@@ -4,11 +4,11 @@ import com.phlox.tvwebbrowser.webengine.gecko.GeckoWebEngine
 import org.json.JSONObject
 import org.mozilla.geckoview.WebExtension
 
-// One instance per page frame.
 class AppContentScriptPortDelegate(
     val port: WebExtension.Port,
     val webEngine: GeckoWebEngine
 ) : WebExtension.PortDelegate {
+
     var hasVideo = false
 
     override fun onPortMessage(message: Any, port: WebExtension.Port) {
@@ -21,7 +21,10 @@ class AppContentScriptPortDelegate(
                     val origin = json.optString("origin")
 
                     if (url.isNotBlank() && origin.isNotBlank()) {
-                        webEngine.callback?.onNativeStreamDetected(url, origin)
+                        webEngine.callback?.onNativeStreamDetected(
+                            url,
+                            origin
+                        )
                     }
                 }
 
@@ -34,14 +37,24 @@ class AppContentScriptPortDelegate(
                     val frameUrl = json.optString("frameUrl")
                     if (frameUrl.length > 2048) return
 
+                    val x = json.optDouble("x")
+                    val y = json.optDouble("y")
+                    val width = json.optDouble("width")
+                    val height = json.optDouble("height")
+
                     webEngine.callback?.onInlineVideoRect(
                         frameUrl,
-                        json.optDouble("x"),
-                        json.optDouble("y"),
-                        json.optDouble("width"),
-                        json.optDouble("height"),
+                        x,
+                        y,
+                        width,
+                        height,
                         json.optDouble("viewportWidth"),
-                        json.optDouble("viewportHeight")
+                        json.optDouble("viewportHeight"),
+                        json.optDouble("clipX", x),
+                        json.optDouble("clipY", y),
+                        json.optDouble("clipWidth", width),
+                        json.optDouble("clipHeight", height),
+                        json.optLong("measuredAt", 0L)
                     )
                 }
             }
