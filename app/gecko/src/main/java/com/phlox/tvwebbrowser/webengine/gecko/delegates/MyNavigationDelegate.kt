@@ -1,7 +1,8 @@
-
 package com.phlox.tvwebbrowser.webengine.gecko.delegates
 
 import com.phlox.tvwebbrowser.AppContext
+import android.net.Uri
+import android.text.TextUtils
 import com.phlox.tvwebbrowser.webengine.gecko.GeckoWebEngine
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
@@ -84,11 +85,48 @@ class MyNavigationDelegate(private val webEngine: GeckoWebEngine) :
         uri: String?,
         error: WebRequestError
     ): GeckoResult<String>? {
-        return GeckoResult.fromValue(
-            "data:text/html," + createErrorPage(
-                error.category,
-                error.code
+        if (error.category != WebRequestError.ERROR_CATEGORY_NETWORK &&
+            error.code != WebRequestError.ERROR_UNKNOWN_HOST) {
+            return GeckoResult.fromValue(
+                "data:text/html;charset=utf-8," +
+                    Uri.encode(createErrorPage(error.category, error.code))
             )
+        }
+
+        val target = uri?.let {
+            runCatching { Uri.parse(it) }.getOrNull()
+        }
+        val canRetry = target?.scheme.equals("https", true) ||
+            target?.scheme.equals("http", true)
+
+        val message = if (error.code == WebRequestError.ERROR_UNKNOWN_HOST) {
+            "The website address could not be resolved. Check its spelling and your connection. " +
+                "AdGuard may also be filtering this domain."
+        } else {
+            "The website could not be loaded. Check your connection and try again."
+        }
+
+        val retry = if (canRetry) {
+            "<a href=\"${TextUtils.htmlEncode(uri.orEmpty())}\" autofocus>Retry</a>"
+        } else {
+            "<p>Use the browser menu to return to a website.</p>"
+        }
+
+        val page = """
+            <!doctype html><html><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>Page could not load</title>
+            <style>body{background:#1b1b1b;color:white;font:20px sans-serif;
+            max-width:42em;margin:8vh auto;padding:24px}a{display:inline-block;
+            background:#30363d;color:white;padding:16px 30px;border-radius:8px;
+            margin-top:12px}a:focus{outline:3px solid white}small{color:#bbb}</style>
+            </head><body><h1>Page could not load</h1><p>$message</p>
+            <p>GeckoView uses AdGuard encrypted DNS. DNS filtering has not been turned off.</p>
+            $retry<p><small>${error.category} / ${error.code}</small></p></body></html>
+        """.trimIndent()
+
+        return GeckoResult.fromValue(
+            "data:text/html;charset=utf-8," + Uri.encode(page)
         )
     }
 
