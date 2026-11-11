@@ -73,6 +73,22 @@ class TabsAdapter(private val tabsView: TabsView) : RecyclerView.Adapter<TabView
 
             vb.tvTitle.text = tabState.title
 
+            // Only the open tab has an X. Leave room for it in every tab so
+            // titles do not shift as the user switches tabs.
+            vb.ibCloseTab.visibility = if (tabsModel?.currentTab?.value === tabState) {
+                View.VISIBLE
+            } else {
+                View.INVISIBLE
+            }
+            vb.ibCloseTab.setOnClickListener {
+                // The tab may have changed since this holder was bound.
+                // Reuse the existing closeTab path: it handles the last tab
+                // by opening Home, and cleans up the Gecko/Media3 session.
+                if (tabsModel?.currentTab?.value === tabState) {
+                    listener?.closeTab(tabState)
+                }
+            }
+
             if (current == tabState.position) {
                 checkedView?.isChecked = false
                 vb.root.isChecked = true
@@ -111,6 +127,10 @@ class TabsAdapter(private val tabsView: TabsView) : RecyclerView.Adapter<TabView
 
             vb.root.setOnClickListener {
                 listener?.onTitleSelected(tabState.position)
+                // Focus may have already updated `current`, in which case
+                // TabsView's selection observer does not rebind the tabs.
+                // Refresh X visibility after a tab is actually selected.
+                notifyItemRangeChanged(0, itemCount)
             }
 
             vb.root.setOnLongClickListener {
