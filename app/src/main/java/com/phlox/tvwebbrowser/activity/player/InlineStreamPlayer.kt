@@ -31,6 +31,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import com.phlox.tvwebbrowser.R
+import com.phlox.tvwebbrowser.activity.main.dialogs.settings.StreamingOptions
 import com.phlox.tvwebbrowser.widgets.cursor.CursorDrawerDelegate
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -45,8 +46,8 @@ private val onFullscreenRequested: () -> Unit = {}
 ) {
 private companion object {
 const val TAG = "MomBrowserMedia3"
-const val STARTUP_TIMEOUT_MS = 120_000L
-const val REBUFFER_TIMEOUT_MS = 90_000L
+const val STARTUP_TIMEOUT_MS = 40_000L
+const val REBUFFER_TIMEOUT_MS = 25_000L
 const val MAX_VIDEO_VIEW_SIZE = 16_384
 const val MAX_VIDEO_VIEW_AREA = 16_777_216.0
 }
@@ -242,6 +243,7 @@ return path.endsWith(".m3u8") || path.endsWith(".mpd")
 }
 
 fun detect(url: String, origin: String, userAgent: String?, frameId: String) {
+if (!StreamingOptions.nativePlaybackEnabled(activity)) return
 if (!isPlaylist(url) || frameId.isBlank() || frameId.length > 128) return
 val active = current
 if (active != null && active.frameId != frameId) return
@@ -385,6 +387,10 @@ if (!activity.lifecycle.currentState
 .isAtLeast(Lifecycle.State.RESUMED)
 ) return
 val req = pending ?: return
+if (!StreamingOptions.nativePlaybackEnabled(activity)) {
+close()
+return
+}
 val active = current
 if (active != null &&
 active.frameId != req.frameId) {
@@ -470,8 +476,8 @@ headers["Referer"] = req.origin
 val http = DefaultHttpDataSource.Factory()
 .setDefaultRequestProperties(headers)
 .setAllowCrossProtocolRedirects(true)
-.setConnectTimeoutMs(60000)
-.setReadTimeoutMs(60000)
+.setConnectTimeoutMs(15000)
+.setReadTimeoutMs(15000)
 req.userAgent?.takeIf {
 it.isNotBlank()
 }?.let {
