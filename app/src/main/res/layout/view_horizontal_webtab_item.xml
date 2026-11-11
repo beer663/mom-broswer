@@ -6,7 +6,7 @@
     android:focusable="true"
     android:focusableInTouchMode="true"
     android:nextFocusUp="@+id/ibMenu"
-    android:nextFocusDown="@+id/ibCloseTab"
+    android:nextFocusDown="@+id/ibHome"
     android:paddingStart="@dimen/web_tab_padding"
     android:paddingEnd="@dimen/web_tab_padding"
     android:background="@drawable/webtab_horizontal_bkg_selector">

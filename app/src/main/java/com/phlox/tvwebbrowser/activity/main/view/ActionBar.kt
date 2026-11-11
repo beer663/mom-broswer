@@ -69,7 +69,8 @@ class ActionBar @JvmOverloads constructor(
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastUrlSubmitAt < 350L) return true // ignore duplicate IME + key events
         lastUrlSubmitAt = now
-        val urlOrSearch = vb.etUrl.text.toString()
+        val urlOrSearch = vb.etUrl.text.toString().trim()
+        if (urlOrSearch.isEmpty()) return true
         val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
         imm.hideSoftInputFromWindow(vb.etUrl.windowToken, 0)
         callback?.search(urlOrSearch)
@@ -135,6 +136,10 @@ class ActionBar @JvmOverloads constructor(
 
         vb.etUrl.onFocusChangeListener = etUrlFocusChangeListener
 
+        // A single-line field exposes Search on Android TV IMEs instead of a
+        // newline; keep both the editor-action and hardware key listeners.
+        vb.etUrl.setSingleLine(true)
+        vb.etUrl.imeOptions = EditorInfo.IME_ACTION_SEARCH
         vb.etUrl.setOnKeyListener(etUrlKeyListener)
         vb.etUrl.setOnEditorActionListener(etUrlEditorActionListener)
 
@@ -157,6 +162,19 @@ class ActionBar @JvmOverloads constructor(
 
     /** Let native input handle its own navigation and IME Search key. */
     fun isAddressInputFocused(): Boolean = vb.etUrl.hasFocus()
+
+    // Android TV keyboards sometimes temporarily move focus away from EditText
+    // while completing their Search/Go action. The address editor remains the
+    // active input until its expanded mode is dismissed.
+    fun isAddressInputEditing(): Boolean = vb.etUrl.hasFocus() || extendedAddressBarMode
+
+    /** Backup for TV keyboard Search/Enter events that bypass EditText's listener. */
+    fun submitAddressFromKeyboard(): Boolean = submitAddress()
+
+    // Some TV IMEs send a trailing Enter key-up after the editor action has
+    // already navigated. It must not turn into a click on the menu cursor.
+    fun wasAddressJustSubmitted(): Boolean =
+        android.os.SystemClock.elapsedRealtime() - lastUrlSubmitAt < 500L
 
     fun setAddressBoxText(text: String) {
         if (text == Config.HOME_PAGE_URL) {

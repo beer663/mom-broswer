@@ -215,9 +215,6 @@ tab.webEngine.goForward()
 }
 }
 vb.ibRefresh.setOnClickListener { refresh() }
-vb.ibCloseTab.setOnClickListener {
-tabsModel.currentTab.value?.apply { closeTab(this) }
-}
 vb.vActionBar.callback = this
 vb.llBottomPanel.childs.forEach {
 it.setOnTouchListener(bottomButtonsOnTouchListener)
@@ -1051,7 +1048,25 @@ window.callback = object : Window.Callback by localCallback {
 override fun dispatchKeyEvent(event: KeyEvent): Boolean {
 backNavigationEventsAdapter.dispatchKeyEvent(event)
 if (vb.rlActionBar.isVisible &&
-vb.vActionBar.isAddressInputFocused()) {
+    event.action == KeyEvent.ACTION_UP &&
+    (event.keyCode == KeyEvent.KEYCODE_ENTER ||
+     event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER ||
+     event.keyCode == KeyEvent.KEYCODE_SEARCH) &&
+    vb.vActionBar.wasAddressJustSubmitted()) {
+    return true
+}
+if (vb.rlActionBar.isVisible &&
+vb.vActionBar.isAddressInputEditing()) {
+// Keep TV keyboard Search/Enter away from the virtual cursor and shortcuts.
+// Some Android TV keyboards deliver a key event directly to the Activity
+// instead of invoking the EditText editor-action listener.
+if (event.action == KeyEvent.ACTION_UP && (
+    event.keyCode == KeyEvent.KEYCODE_ENTER ||
+    event.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER ||
+    event.keyCode == KeyEvent.KEYCODE_SEARCH
+)) {
+    return vb.vActionBar.submitAddressFromKeyboard()
+}
 return localCallback.dispatchKeyEvent(event)
 }
 if ((vb.rlActionBar.isVisible || vb.llBottomPanel.isVisible) &&
@@ -1079,7 +1094,7 @@ if (backNavigationEventsAdapter.dispatchGenericMotionEvent(event)) {
 return true
 }
 if (vb.rlActionBar.isVisible &&
-vb.vActionBar.isAddressInputFocused()) {
+vb.vActionBar.isAddressInputEditing()) {
 return localCallback.dispatchGenericMotionEvent(event)
 }
 if ((vb.rlActionBar.isVisible || vb.llBottomPanel.isVisible) &&
@@ -1141,6 +1156,22 @@ vb.llBottomPanel
 menuCursorOverlay = it
 it.pageTapsEnabled = {
 isBundledHomeForMenuClicks(tabsModel.currentTab.value)
+}
+// The menu cursor owns the D-pad while visible. Pass only scroll deltas
+// to the active page's existing scroll implementation, without recreating
+// the page cursor or interfering with clicks on menu buttons.
+it.scrollPageBy = { dx, dy ->
+val activeView = tabsModel.currentTab.value?.webEngine?.getView()
+val delegate = tabsModel.currentTab.value?.webEngine?.getCursorDrawerDelegate()
+if (activeView?.isShown == true &&
+    delegate?.customScrollCallback?.onScroll(dx, dy) == true) {
+    true
+} else if (activeView is android.webkit.WebView && activeView.isShown) {
+    activeView.scrollBy(dx, dy)
+    true
+} else {
+    false
+}
 }
 it.onPageTap = {
 if (vb.rlActionBar.isVisible || vb.llBottomPanel.isVisible) {
@@ -1242,7 +1273,9 @@ vb.llBottomPanel.animate()
 .translationY(0f)
 .alpha(1f)
 .withEndAction {
-vb.vActionBar.catchFocus()
+if (!vb.vActionBar.isAddressInputEditing()) {
+    vb.vActionBar.catchFocus()
+}
 }
 .start()
 vb.vActionBar.dismissExtendedAddressBarMode()

@@ -38,6 +38,9 @@ private var closeMenuOnUp = false
 private var forwarding = false
 var pageTapsEnabled: () -> Boolean = { false }
 var onPageTap: () -> Unit = {}
+// Forward edge-scrolling from the menu cursor to the active webpage.
+// Do not change touch routing: the toolbar and menu buttons remain clickable.
+var scrollPageBy: (Int, Int) -> Boolean = { _, _ -> false }
 
 init {
 setWillNotDraw(false)
@@ -49,7 +52,12 @@ toolbar.elevation = maxOf(toolbar.elevation, menuElevation)
 bottomPanel.elevation = maxOf(bottomPanel.elevation, menuElevation)
 cursorDrawerDelegate.customScrollCallback =
 object : CursorDrawerDelegate.CustomScrollCallback {
-override fun onScroll(scrollX: Int, scrollY: Int) = true
+override fun onScroll(scrollX: Int, scrollY: Int): Boolean {
+    // Suppress the synthetic drag fallback even if the webpage has gone away.
+    // Real scrolling is performed by Gecko's existing pan/zoom controller.
+    scrollPageBy(scrollX, scrollY)
+    return true
+}
 }
 }
 

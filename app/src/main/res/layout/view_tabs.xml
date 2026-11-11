@@ -32,7 +32,7 @@
       tools:ignore="HardcodedText"
       android:gravity="center"
       android:nextFocusUp="@+id/ibMenu"
-      android:nextFocusDown="@+id/ibCloseTab"
+      android:nextFocusDown="@+id/ibHome"
       />
   <View
       android:id="@+id/vSpacer"
