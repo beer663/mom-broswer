@@ -98,6 +98,7 @@ private var nativePlaybackActive = false
 private var oldUiFlags: Int? = null
 private var timeout: Runnable? = null
 private var bufferingTimeout: Runnable? = null
+private var fullscreenExitSurfaceRefresh: Runnable? = null
 private var attemptedBufferingRecovery = false
 private val startPending = Runnable { startIfPositioned() }
 
@@ -795,6 +796,32 @@ updateHolderVisibility()
 fun isActive() = current != null
 fun isNativePlaybackActive() = nativePlaybackActive
 
+// Some Android TV decoders keep playing audio while their TextureView stops
+// displaying new frames after a fullscreen -> inline size transition.
+// Rebind only the video output; do not stop, prepare, seek, or recreate ExoPlayer.
+private fun scheduleFullscreenExitSurfaceRefresh(expected: ExoPlayer?) {
+fullscreenExitSurfaceRefresh?.let { handler.removeCallbacks(it) }
+fullscreenExitSurfaceRefresh = null
+if (expected == null) return
+val task = Runnable {
+fullscreenExitSurfaceRefresh = null
+if (fullscreen || current == null || exo !== expected || !ready || !positionVisible) return@Runnable
+val video = playerView ?: return@Runnable
+if (holder?.isShown != true || video.player !== expected) return@Runnable
+try {
+video.player = null
+video.player = expected
+Log.i(TAG, "Reattached Media3 video output after leaving fullscreen; stream not restarted")
+} catch (e: RuntimeException) {
+Log.w(TAG, "Video output reattachment failed; keeping playback running", e)
+// Reconnect if the first setter succeeded but the second threw.
+if (video.player == null) runCatching { video.player = expected }
+}
+}
+fullscreenExitSurfaceRefresh = task
+handler.postDelayed(task, 250L)
+}
+
 private fun catchUpLiveStreamOnFullscreenExit() {
 val player = exo ?: return
 if (!ready ||
@@ -830,6 +857,8 @@ lastInlineBox?.let(::position)
 root.post {
 if (current != null && !fullscreen) {
 lastInlineBox?.let(::position)
+// Wait for the inline layout to settle before refreshing only the video surface.
+scheduleFullscreenExitSurfaceRefresh(exo)
 }
 }
 } else {
@@ -852,6 +881,8 @@ preserveNativePlayback: Boolean = false
 ) {
 root.removeOnLayoutChangeListener(playerLayoutListener)
 handler.removeCallbacks(startPending)
+fullscreenExitSurfaceRefresh?.let { handler.removeCallbacks(it) }
+fullscreenExitSurfaceRefresh = null
 cancelTimeout()
 cancelBufferingTimeout()
 attemptedBufferingRecovery = false
