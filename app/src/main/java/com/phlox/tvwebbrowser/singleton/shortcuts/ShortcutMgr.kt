@@ -80,16 +80,24 @@ class ShortcutMgr private constructor() {
                 mainActivity.initiateVoiceSearch()
             }
             Shortcut.PLAY_PAUSE -> {
-                webEngine?.togglePlayback()
+                if (!mainActivity.handleNativeMediaShortcut(shortcut)) {
+                    webEngine?.togglePlayback()
+                }
             }
             Shortcut.MEDIA_STOP -> {
-                webEngine?.stopPlayback()
+                if (!mainActivity.handleNativeMediaShortcut(shortcut)) {
+                    webEngine?.stopPlayback()
+                }
             }
             Shortcut.MEDIA_REWIND -> {
-                webEngine?.rewind()
+                if (!mainActivity.handleNativeMediaShortcut(shortcut)) {
+                    webEngine?.rewind()
+                }
             }
             Shortcut.MEDIA_FAST_FORWARD -> {
-                webEngine?.fastForward()
+                if (!mainActivity.handleNativeMediaShortcut(shortcut)) {
+                    webEngine?.fastForward()
+                }
             }
         }
     }

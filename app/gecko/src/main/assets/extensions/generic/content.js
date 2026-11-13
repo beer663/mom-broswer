@@ -11,28 +11,6 @@ value => value.toString(16)
 ).join("-");
 let momLastFrameUrl = location.href;
 let momNativeReleaseRequested = false;
-// Media3-only test: HTML elements may initialize to reveal playlists, but
-// after HLS/DASH detection they are never allowed to play as a fallback.
-let momMedia3StreamDetected = false;
-function momSuppressWebsiteMedia() {
-    if (!momMedia3StreamDetected) return;
-    document.querySelectorAll("video, audio").forEach(media => {
-        try {
-            media.muted = true;
-            media.pause();
-        } catch (_) {}
-    });
-}
-// Streaming pages can create replacement video elements after detection.
-["play", "playing"].forEach(type => {
-    window.addEventListener(type, event => {
-        if (!momMedia3StreamDetected) return;
-        const media = event.target;
-        if (media && typeof media.pause === "function") {
-            try { media.muted = true; media.pause(); } catch (_) {}
-        }
-    }, true);
-});
 communicatePort.postMessage({ type: "inlineFrameReady", frameId: momFrameId });
 
 function momReleaseNativeFrame(reason) {
@@ -48,16 +26,12 @@ reason: reason
 function momCheckFrameNavigation() {
 if (momLastFrameUrl === location.href) return;
 momLastFrameUrl = location.href;
-momMedia3StreamDetected = false;
 momReleaseNativeFrame("navigation");
 }
 
 browser.runtime.onMessage.addListener(message => {
 if (!message || message.type !== "nativeStreamDetected") return;
 momCheckFrameNavigation();
-momMedia3StreamDetected = true;
-momSuppressWebsiteMedia();
-tvbroUpdateVideoControls();
 try {
 communicatePort.postMessage({
 type: "nativeStreamDetected",
@@ -86,8 +60,6 @@ return;
 }
 if (!message || message.type !== "nativeInlinePlayback") return;
 if (message.active) {
-momMedia3StreamDetected = true;
-momSuppressWebsiteMedia();
 if (momNativeInlineActive) return;
 momPinnedVideo = momGeometryVideo && momGeometryVideo.isConnected
 ? momGeometryVideo : tvbroBestVideo();
@@ -111,11 +83,6 @@ momNativeInlineActive = false;
 momPinnedVideo = null;
 momNativeReleaseRequested = false;
 for (const [v, state] of momNativeVideoStates) {
-// Strict Media3-only mode: never resume the HTML player when Media3 exits.
-if (momMedia3StreamDetected) {
-    try { v.muted = true; v.pause(); } catch (_) {}
-    continue;
-}
 v.muted = state.muted;
 const info = tvbroAutoplayInfo.get(v);
 if (info) info.userPaused = state.userPaused === true;
@@ -146,7 +113,17 @@ if (result && result.catch) result.catch(() => {});
 }
 }
 momNativeVideoStates.clear();
-momSuppressWebsiteMedia();
+// A server switch can replace the original <video> while Media3 is active.
+// After release, re-scan newly inserted website players rather than leaving
+// them paused with the previous video's saved state.
+if (momBrowserInForeground) {
+setTimeout(() => {
+if (momNativeInlineActive || !momBrowserInForeground ||
+document.visibilityState === "hidden") return;
+tvbroScheduleVideoCheckNow();
+tvbroAutoplayScan();
+}, 0);
+}
 }
 }
 
@@ -160,9 +137,19 @@ type: "nativeInlinePlayback",
 restorePlayback: false
 });
 });
-window.addEventListener("pageshow", () => {
+window.addEventListener("pageshow", event => {
+// BFCache may restore the old DOM without recreating the content script.
+// Release stale HTML suppression from the previous native player instance.
+if (event.persisted && momNativeInlineActive) {
+momHandleNativeMessage({
+type: "nativeInlinePlayback",
+active: false,
+restorePlayback: false
+});
+}
 momLastRectSent = 0;
 momReportVideoRect();
+if (momBrowserInForeground) tvbroScheduleVideoCheckNow();
 });
 ["popstate", "hashchange"].forEach(name =>
 window.addEventListener(name, momCheckFrameNavigation)
@@ -727,10 +714,6 @@ console.log("TV Bro: controls update failed:", e);
 function tvbroUpdateVideoControlsUnsafe() {
 if (!tvbroVideoControlsHost) tvbroCreateVideoControls();
 if (!tvbroVideoControlsHost) return;
-if (momMedia3StreamDetected) {
-    tvbroVideoControlsHost.style.display = "none";
-    return;
-}
 const fullscreen = !!(
 document.fullscreenElement ||
 document.mozFullScreenElement
@@ -917,15 +900,13 @@ r.left < window.innerWidth;
 }
 
 function tvbroStartPlayback(video) {
-if (!momBrowserInForeground || momNativeInlineActive ||
-    momMedia3StreamDetected) return;
+if (!momBrowserInForeground || momNativeInlineActive) return;
 const start = () => {
 const p = video.play();
 return (p && p.then) ? p : Promise.resolve();
 };
 start().catch(() => {
-if (!momBrowserInForeground || momNativeInlineActive ||
-    momMedia3StreamDetected) return;
+if (!momBrowserInForeground || momNativeInlineActive) return;
 try {
 video.muted = true;
 start().catch(() => {});
@@ -989,7 +970,6 @@ return false;
 function tvbroTryAutoplay(video) {
 if (!momBrowserInForeground ||
 momNativeInlineActive ||
-momMedia3StreamDetected ||
 !tvbroAutoplayEnabled ||
 !video.isConnected) return;
 let info = tvbroAutoplayInfo.get(video);
@@ -1013,7 +993,6 @@ info.overlayTimer = setTimeout(() => {
 info.overlayTimer = null;
 if (!momBrowserInForeground ||
 momNativeInlineActive ||
-momMedia3StreamDetected ||
 !video.isConnected ||
 info.userPaused ||
 video.ended ||
@@ -1023,7 +1002,6 @@ if (tvbroClickPlayOverlay(video)) {
 setTimeout(() => {
 if (momBrowserInForeground &&
 !momNativeInlineActive &&
-!momMedia3StreamDetected &&
 video.isConnected &&
 video.paused &&
 !video.ended &&
@@ -1048,7 +1026,6 @@ tvbroAutoplayScan();
 function tvbroAutoplayScan() {
 if (!momBrowserInForeground ||
 momNativeInlineActive ||
-momMedia3StreamDetected ||
 !momVideoWatchersStarted) return;
 const videos = document.querySelectorAll("video");
 let playing = false;
@@ -1088,7 +1065,6 @@ document.addEventListener("pause", e => {
 const v = e.target;
 const info = tvbroAutoplayInfo.get(v);
 if (!momNativeInlineActive &&
-!momMedia3StreamDetected &&
 info &&
 info.played &&
 !v.ended) {

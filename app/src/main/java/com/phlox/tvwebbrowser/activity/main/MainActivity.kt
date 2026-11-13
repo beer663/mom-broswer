@@ -77,6 +77,7 @@ import com.phlox.tvwebbrowser.model.HostConfig
 import com.phlox.tvwebbrowser.model.WebTabState
 import com.phlox.tvwebbrowser.service.downloads.DownloadService
 import com.phlox.tvwebbrowser.singleton.AppDatabase
+import com.phlox.tvwebbrowser.singleton.shortcuts.Shortcut
 import com.phlox.tvwebbrowser.singleton.shortcuts.ShortcutMgr
 import com.phlox.tvwebbrowser.utils.BackNavigationEventsAdapter
 import com.phlox.tvwebbrowser.utils.DownloadUtils
@@ -445,6 +446,19 @@ hideMenuOverlay()
 fun refresh() {
 inlinePlayer.reset()
 tabsModel.currentTab.value?.webEngine?.reload()
+}
+
+// Returns true only if the active inline Media3 session handled the key.
+// Otherwise ShortcutMgr forwards it to Gecko's website media session.
+fun handleNativeMediaShortcut(shortcut: Shortcut): Boolean {
+if (!::vb.isInitialized || !inlinePlayer.isNativePlaybackActive()) return false
+return when (shortcut) {
+Shortcut.PLAY_PAUSE -> inlinePlayer.toggleNativePlayback()
+Shortcut.MEDIA_STOP -> inlinePlayer.stopNativePlayback()
+Shortcut.MEDIA_REWIND -> inlinePlayer.seekNativePlayback(-10_000L)
+Shortcut.MEDIA_FAST_FORWARD -> inlinePlayer.seekNativePlayback(10_000L)
+else -> false
+}
 }
 
 override fun onDestroy() {

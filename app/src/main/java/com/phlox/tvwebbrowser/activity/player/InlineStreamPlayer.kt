@@ -15,7 +15,6 @@ import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.RelativeLayout
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
@@ -249,7 +248,7 @@ if (active != null && active.frameId != frameId) return
 val now = SystemClock.uptimeMillis()
 if ((cooldown[url] ?: 0L) > now) return
 if (url in skippedMedia3Urls) {
-Log.d(TAG, "Already exited/failed this stream; not retrying Media3 automatically")
+Log.d(TAG, "Already exited/failed this stream; leaving it with the website player")
 return
 }
 if (current?.url == url || pending?.url == url) return
@@ -550,7 +549,7 @@ TAG,
 "Media3 error code=${error.errorCode} host=${Uri.parse(req.url).host}",
 error
 )
-stopFailedNativeStream(req.url)
+fallBackToWebsite(req.url)
 }
 })
 p.volume = if (muted) 0f else 1f
@@ -560,13 +559,6 @@ MediaItem.Builder()
 .setMimeType(mime)
 .build()
 )
-// Media3-only experiment: take ownership as soon as the stream is positioned.
-// The website must not keep decoding/playing a competing HTML video for
-// the entire startup/buffering period.
-if (!nativePlaybackActive) {
-nativePlaybackActive = true
-onActiveChanged(true)
-}
 p.prepare()
 p.playWhenReady = true
 val timeoutTask = Runnable {
@@ -575,7 +567,7 @@ Log.w(
 TAG,
 "Initial stream did not reach READY within ${STARTUP_TIMEOUT_MS / 1000}s"
 )
-stopFailedNativeStream(req.url)
+fallBackToWebsite(req.url)
 }
 }
 timeout = timeoutTask
@@ -610,17 +602,9 @@ button?.visibility = View.GONE
 onFullscreenRequested()
 }
 
-private fun stopFailedNativeStream(url: String) {
+private fun fallBackToWebsite(url: String) {
 if (current?.url != url) return
-Log.w(TAG, "Media3-only: playback failed; select a different server")
-Toast.makeText(
-activity,
-"Media3 could not play this stream. Try another server.",
-Toast.LENGTH_LONG
-).show()
 onFailed(url)
-// Prevent auto-takeover of this failed URL until the tab is reset.
-// The experimental content script deliberately does NOT resume HTML video.
 close(suppressCurrent = true)
 }
 
@@ -646,9 +630,9 @@ attemptedBufferingRecovery
 attemptedBufferingRecovery = true
 Log.w(
 TAG,
-"Media3-only stream stalled for ${REBUFFER_TIMEOUT_MS / 1000}s; stopping this server"
+"Stream buffered for ${REBUFFER_TIMEOUT_MS / 1000}s after READY; using website player"
 )
-stopFailedNativeStream(url)
+fallBackToWebsite(url)
 }
 bufferingTimeout = task
 handler.postDelayed(task, REBUFFER_TIMEOUT_MS)
@@ -810,6 +794,36 @@ updateHolderVisibility()
 
 fun isActive() = current != null
 fun isNativePlaybackActive() = nativePlaybackActive
+
+// Remote media shortcuts must control the player that actually owns playback.
+// Never dispatch a shortcut to the dormant HTML player while Media3 is active.
+fun toggleNativePlayback(): Boolean {
+val player = exo ?: return false
+if (!nativePlaybackActive || current == null) return false
+if (player.playWhenReady) player.pause() else player.play()
+return true
+}
+
+fun stopNativePlayback(): Boolean {
+val player = exo ?: return false
+if (!nativePlaybackActive || current == null) return false
+// Pause without closing the overlay: closing would reactivate the website
+// player and unexpectedly start the same broadcast a second time.
+player.pause()
+return true
+}
+
+fun seekNativePlayback(offsetMs: Long): Boolean {
+val player = exo ?: return false
+if (!nativePlaybackActive || current == null) return false
+// For nonseekable live streams consume the shortcut, but never ask Gecko to
+// seek the paused website player beneath the Media3 overlay.
+if (player.isCurrentMediaItemSeekable &&
+player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) {
+player.seekTo((player.currentPosition + offsetMs).coerceAtLeast(0L))
+}
+return true
+}
 
 private fun catchUpLiveStreamOnFullscreenExit() {
 val player = exo ?: return
