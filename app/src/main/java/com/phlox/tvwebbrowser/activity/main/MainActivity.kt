@@ -1410,55 +1410,32 @@ private inner class WebEngineCallback(
 val tab: WebTabState
 ) : WebEngineWindowProviderCallback {
 
+// HTML-only test build: GeckoView's HTML5 video element owns playback.
+// Intentionally do not hand off detected streams or video geometry to Media3.
 override fun onNativeStreamDetected(url: String, origin: String, frameId: String) {
-if (tabsModel.currentTab.value !== tab ||
-!config.isWebEngineGecko()) return
-inlinePlayer.detect(
-url,
-origin,
-tab.webEngine.userAgentString,
-frameId
-)
+    // Media3 takeover disabled for this experiment.
 }
 
 override fun onInlineFrameReleased(frameId: String, fallbackToHtml: Boolean) {
-if (tabsModel.currentTab.value !== tab ||
-!config.isWebEngineGecko()) return
-inlinePlayer.releaseFrame(frameId, fallbackToHtml)
+    // No inline Media3 player was launched.
 }
 
 override fun onInlineVideoRect(
-frameUrl: String,
-x: Double,
-y: Double,
-width: Double,
-height: Double,
-viewportWidth: Double,
-viewportHeight: Double,
-clipX: Double,
-clipY: Double,
-clipWidth: Double,
-clipHeight: Double,
-measuredAt: Long,
-frameId: String
+    frameUrl: String,
+    x: Double,
+    y: Double,
+    width: Double,
+    height: Double,
+    viewportWidth: Double,
+    viewportHeight: Double,
+    clipX: Double,
+    clipY: Double,
+    clipWidth: Double,
+    clipHeight: Double,
+    measuredAt: Long,
+    frameId: String
 ) {
-if (tabsModel.currentTab.value !== tab ||
-!config.isWebEngineGecko()) return
-inlinePlayer.updateRect(
-frameUrl,
-x,
-y,
-width,
-height,
-viewportWidth,
-viewportHeight,
-clipX,
-clipY,
-clipWidth,
-clipHeight,
-measuredAt,
-frameId
-)
+    // No native player overlay to position.
 }
 
 override fun getActivity(): Activity {

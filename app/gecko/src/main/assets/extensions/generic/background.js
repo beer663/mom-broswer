@@ -15,40 +15,8 @@ tvBroPort.onMessage.addListener(response => {
     }
 });
 
-// Send detections through the requesting tab and frame.
-// Let Media3 attempt playback even when the browser sends cookies.
-const TVBRO_PLAYLIST = /\.(m3u8|mpd)(?:[?#]|$)/i;
-const tvbroReported = new Map();
-
-browser.webRequest.onBeforeSendHeaders.addListener(details => {
-    if (!TVBRO_PLAYLIST.test(details.url) ||
-        details.tabId < 0 ||
-        details.frameId < 0) return;
-
-    const origin = details.originUrl || details.documentUrl || "";
-    if (!/^https?:\/\//i.test(origin)) return;
-
-    const now = Date.now();
-    const key = `${details.tabId}:${details.frameId}:${details.url}`;
-
-    if (now - (tvbroReported.get(key) || 0) < 30000) return;
-    tvbroReported.set(key, now);
-
-    for (const [entry, when] of tvbroReported) {
-        if (now - when > 60000) tvbroReported.delete(entry);
-    }
-
-    browser.tabs.sendMessage(details.tabId, {
-        type: "nativeStreamDetected",
-        url: details.url,
-        origin: origin
-    }, { frameId: details.frameId }).catch(() => {
-        tvbroReported.delete(key);
-    });
-}, {
-    urls: ["<all_urls>"],
-    types: ["xmlhttprequest", "media", "other"]
-}, ["requestHeaders"]);
+// HTML-only test: do not intercept playlist headers or dispatch Media3 takeover.
+// HTML video requests continue to the website normally.
 
 const MEDIA_STREAM_URL =
     /\.(ts|m4s|m4v|m4a|aac|mp4|webm|mp3|m3u8|mpd)([?#]|$)/i;

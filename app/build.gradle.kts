@@ -8,7 +8,7 @@ android {
     namespace = "com.phlox.tvwebbrowser"
 
     defaultConfig {
-        applicationId = "com.mombrowser.standalone"
+        applicationId = "com.mombrowser.htmlonly"
         versionCode = 68
         versionName = "2.1.5"
 
@@ -66,7 +66,7 @@ android {
     productFlavors {
         create("generic") {
             dimension = "appstore"
-            buildConfigField("Boolean", "BUILT_IN_AUTO_UPDATE", "true")
+            buildConfigField("Boolean", "BUILT_IN_AUTO_UPDATE", "false")
         }
         create("google") {
             dimension = "appstore"
