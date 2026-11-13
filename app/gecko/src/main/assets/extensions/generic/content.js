@@ -26,6 +26,8 @@ reason: reason
 function momCheckFrameNavigation() {
 if (momLastFrameUrl === location.href) return;
 momLastFrameUrl = location.href;
+momPlaybackRevision++;
+momHtmlAutoplayAllowed = true;
 momReleaseNativeFrame("navigation");
 }
 
@@ -44,11 +46,27 @@ frameId: momFrameId
 
 let momBrowserInForeground = true;
 let momNativeInlineActive = false;
+let momHtmlAutoplayAllowed = true;
+let momPlaybackRevision = 0;
 const momNativeVideoStates = new Map();
+
+function momCanAutoplayHtml() {
+return momHtmlAutoplayAllowed &&
+momBrowserInForeground &&
+!momNativeInlineActive &&
+document.visibilityState !== "hidden";
+}
 
 function momHandleNativeMessage(message) {
 if (message && message.type === "browserForeground") {
+const returningToPage = !momBrowserInForeground &&
+message.foreground === true;
 momBrowserInForeground = message.foreground === true;
+momPlaybackRevision++;
+if (returningToPage) {
+momHtmlAutoplayAllowed = true;
+tvbroScheduleVideoCheckNow();
+}
 if (!momBrowserInForeground) {
 document.querySelectorAll("video, audio").forEach(media => {
 try {
@@ -59,6 +77,9 @@ media.pause();
 return;
 }
 if (!message || message.type !== "nativeInlinePlayback") return;
+momPlaybackRevision++;
+momHtmlAutoplayAllowed = message.active === true ||
+message.restorePlayback !== false;
 if (message.active) {
 if (momNativeInlineActive) return;
 momPinnedVideo = momGeometryVideo && momGeometryVideo.isConnected
@@ -86,8 +107,7 @@ for (const [v, state] of momNativeVideoStates) {
 v.muted = state.muted;
 const info = tvbroAutoplayInfo.get(v);
 if (info) info.userPaused = state.userPaused === true;
-if (momBrowserInForeground &&
-message.restorePlayback !== false &&
+if (momCanAutoplayHtml() &&
 v.isConnected &&
 !state.replaced &&
 !state.paused &&
@@ -116,10 +136,10 @@ momNativeVideoStates.clear();
 // A server switch can replace the original <video> while Media3 is active.
 // After release, re-scan newly inserted website players rather than leaving
 // them paused with the previous video's saved state.
-if (momBrowserInForeground) {
+if (momCanAutoplayHtml()) {
+const revision = momPlaybackRevision;
 setTimeout(() => {
-if (momNativeInlineActive || !momBrowserInForeground ||
-document.visibilityState === "hidden") return;
+if (revision !== momPlaybackRevision || !momCanAutoplayHtml()) return;
 tvbroScheduleVideoCheckNow();
 tvbroAutoplayScan();
 }, 0);
@@ -146,6 +166,11 @@ type: "nativeInlinePlayback",
 active: false,
 restorePlayback: false
 });
+}
+// A restored page may autoplay normally again after leaving the BFCache.
+if (event.persisted) {
+momPlaybackRevision++;
+momHtmlAutoplayAllowed = true;
 }
 momLastRectSent = 0;
 momReportVideoRect();
@@ -900,13 +925,17 @@ r.left < window.innerWidth;
 }
 
 function tvbroStartPlayback(video) {
-if (!momBrowserInForeground || momNativeInlineActive) return;
+if (!momCanAutoplayHtml()) return;
+const revision = momPlaybackRevision;
 const start = () => {
+if (revision !== momPlaybackRevision || !momCanAutoplayHtml()) {
+return Promise.resolve();
+}
 const p = video.play();
 return (p && p.then) ? p : Promise.resolve();
 };
 start().catch(() => {
-if (!momBrowserInForeground || momNativeInlineActive) return;
+if (revision !== momPlaybackRevision || !momCanAutoplayHtml()) return;
 try {
 video.muted = true;
 start().catch(() => {});
@@ -968,8 +997,7 @@ return false;
 }
 
 function tvbroTryAutoplay(video) {
-if (!momBrowserInForeground ||
-momNativeInlineActive ||
+if (!momCanAutoplayHtml() ||
 !tvbroAutoplayEnabled ||
 !video.isConnected) return;
 let info = tvbroAutoplayInfo.get(video);
@@ -989,10 +1017,11 @@ info.attempts++;
 tvbroStartPlayback(video);
 }
 if (info.overlayTimer === null && info.overlayClicks < 3) {
+const revision = momPlaybackRevision;
 info.overlayTimer = setTimeout(() => {
 info.overlayTimer = null;
-if (!momBrowserInForeground ||
-momNativeInlineActive ||
+if (revision !== momPlaybackRevision ||
+!momCanAutoplayHtml() ||
 !video.isConnected ||
 info.userPaused ||
 video.ended ||
@@ -1000,8 +1029,8 @@ video.ended ||
 info.overlayClicks++;
 if (tvbroClickPlayOverlay(video)) {
 setTimeout(() => {
-if (momBrowserInForeground &&
-!momNativeInlineActive &&
+if (revision === momPlaybackRevision &&
+momCanAutoplayHtml() &&
 video.isConnected &&
 video.paused &&
 !video.ended &&
@@ -1024,8 +1053,7 @@ tvbroAutoplayScan();
 : null;
 
 function tvbroAutoplayScan() {
-if (!momBrowserInForeground ||
-momNativeInlineActive ||
+if (!momCanAutoplayHtml() ||
 !momVideoWatchersStarted) return;
 const videos = document.querySelectorAll("video");
 let playing = false;
