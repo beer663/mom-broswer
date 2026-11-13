@@ -21,6 +21,7 @@
     function blocked() {
         return !momBrowserInForeground ||
             momNativeInlineActive ||
+            momMedia3StreamDetected ||
             document.visibilityState === "hidden";
     }
 

@@ -8,7 +8,7 @@ android {
     namespace = "com.phlox.tvwebbrowser"
 
     defaultConfig {
-        applicationId = "com.mombrowser.htmlonly"
+        applicationId = "com.mombrowser.media3only"
         versionCode = 68
         versionName = "2.1.5"
 
