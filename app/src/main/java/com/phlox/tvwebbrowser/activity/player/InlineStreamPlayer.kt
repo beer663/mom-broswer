@@ -19,17 +19,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
-import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MimeTypes
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.ui.PlayerView
+import org.videolan.libvlc.util.VLCVideoLayout
 import com.phlox.tvwebbrowser.R
 import com.phlox.tvwebbrowser.widgets.cursor.CursorDrawerDelegate
 import java.util.Locale
@@ -44,9 +34,9 @@ private val onFailed: (String) -> Unit,
 private val onFullscreenRequested: () -> Unit = {}
 ) {
 private companion object {
-const val TAG = "MomBrowserMedia3"
-const val STARTUP_TIMEOUT_MS = 120_000L
-const val REBUFFER_TIMEOUT_MS = 90_000L
+const val TAG = "MomBrowserVLC"
+const val STARTUP_TIMEOUT_MS = 30_000L
+const val REBUFFER_TIMEOUT_MS = 20_000L
 const val MAX_VIDEO_VIEW_SIZE = 16_384
 const val MAX_VIDEO_VIEW_AREA = 16_777_216.0
 }
@@ -78,13 +68,14 @@ val frameId: String
 private val handler = Handler(Looper.getMainLooper())
 private val boxes = mutableMapOf<String, Box>()
 private val cooldown = mutableMapOf<String, Long>()
-private val skippedMedia3Urls = mutableSetOf<String>()
+private val retryGate = NativePlaybackGate()
+private val skippedNativeUrls = mutableSetOf<String>()
 private var pending: Request? = null
 private var pendingReadyAt = 0L
 private var current: Request? = null
-private var exo: ExoPlayer? = null
+private var session: VlcPlaybackSession? = null
 private var holder: FrameLayout? = null
-private var playerView: PlayerView? = null
+private var playerView: VLCVideoLayout? = null
 private var button: Button? = null
 private var fullscreen = false
 private var lastInlineBox: Box? = null
@@ -243,11 +234,12 @@ return path.endsWith(".m3u8") || path.endsWith(".mpd")
 
 fun detect(url: String, origin: String, userAgent: String?, frameId: String) {
 if (!isPlaylist(url) || frameId.isBlank() || frameId.length > 128) return
+if (!retryGate.allows(frameId, origin)) return
 val active = current
 if (active != null && active.frameId != frameId) return
 val now = SystemClock.uptimeMillis()
 if ((cooldown[url] ?: 0L) > now) return
-if (url in skippedMedia3Urls) {
+if (url in skippedNativeUrls) {
 Log.d(TAG, "Already exited/failed this stream; leaving it with the website player")
 return
 }
@@ -385,6 +377,10 @@ if (!activity.lifecycle.currentState
 .isAtLeast(Lifecycle.State.RESUMED)
 ) return
 val req = pending ?: return
+if (!retryGate.allows(req.frameId, req.origin)) {
+pending = null
+return
+}
 val active = current
 if (active != null &&
 active.frameId != req.frameId) {
@@ -409,7 +405,7 @@ drawCursorOnPlayer(this, canvas)
 }
 }.apply {
 setBackgroundColor(Color.BLACK)
-tag = "mom_inline_stream_surface"
+tag = "mom_inline_stream_preparing"
 elevation = dp(12).toFloat()
 isFocusable = false
 clipChildren = true
@@ -421,7 +417,7 @@ val video = LayoutInflater.from(activity).inflate(
 R.layout.view_inline_stream_player,
 host,
 false
-) as PlayerView
+) as VLCVideoLayout
 playerView = video
 host.addView(video, FrameLayout.LayoutParams(-1, -1))
 val control = Button(activity).apply {
@@ -460,128 +456,65 @@ root.addView(
 host,
 RelativeLayout.LayoutParams(dp(200), dp(120))
 )
-host.visibility = View.INVISIBLE
+host.visibility = View.VISIBLE
+host.alpha = 0.01f
 position(box)
-val headers = mutableMapOf<String, String>()
-if (req.origin.startsWith("http://") ||
-req.origin.startsWith("https://")) {
-headers["Referer"] = req.origin
-}
-val http = DefaultHttpDataSource.Factory()
-.setDefaultRequestProperties(headers)
-.setAllowCrossProtocolRedirects(true)
-.setConnectTimeoutMs(60000)
-.setReadTimeoutMs(60000)
-req.userAgent?.takeIf {
-it.isNotBlank()
-}?.let {
-http.setUserAgent(it)
-}
-val factory = DefaultMediaSourceFactory(
-DefaultDataSource.Factory(activity, http)
-)
-val renderers = DefaultRenderersFactory(activity)
-.setEnableDecoderFallback(true)
-val p = ExoPlayer.Builder(activity, renderers)
-.setMediaSourceFactory(factory)
-.build()
-exo = p
-video.player = p
-val mime = if (
-req.url.substringBefore('?')
-.substringBefore('#')
-.lowercase(Locale.ROOT)
-.endsWith(".mpd")
-) {
-MimeTypes.APPLICATION_MPD
-} else {
-MimeTypes.APPLICATION_M3U8
-}
-p.addListener(object : Player.Listener {
-override fun onPlaybackStateChanged(state: Int) {
-if (current?.url != req.url || exo !== p) return
-Log.d(
-TAG,
-"Media3 state=$state host=${Uri.parse(req.url).host}"
-)
-when (state) {
-Player.STATE_READY -> {
-cancelBufferingTimeout()
-if (!ready) {
+try {
+val p = VlcPlaybackSession(
+activity,
+video,
+onReady = {
+if (current === req && activity.lifecycle.currentState
+.isAtLeast(Lifecycle.State.RESUMED)) {
 ready = true
+holder?.tag = "mom_inline_stream_surface"
 cancelTimeout()
 updateHolderVisibility()
-CursorDrawerDelegate.touchInterceptor =
-cursorInterceptor
-CursorDrawerDelegate.overlayRedrawHook =
-cursorRedrawHook
+CursorDrawerDelegate.touchInterceptor = cursorInterceptor
+CursorDrawerDelegate.overlayRedrawHook = cursorRedrawHook
 if (!nativePlaybackActive) {
 nativePlaybackActive = true
 onActiveChanged(true)
 }
-p.playWhenReady = activity.lifecycle.currentState
-.isAtLeast(Lifecycle.State.RESUMED)
 }
-}
-Player.STATE_BUFFERING -> {
-if (ready) {
-scheduleBufferingRecovery(p, req.url)
-}
-}
-else -> cancelBufferingTimeout()
-}
-}
-override fun onIsPlayingChanged(isPlaying: Boolean) {
-if (current?.url != req.url || exo !== p) return
-if (isPlaying) {
+},
+onBufferingChanged = { buffering ->
+if (current === req) {
+if (buffering && ready) {
+session?.let { scheduleBufferingRecovery(it, req.url) }
+} else {
 cancelBufferingTimeout()
-} else if (
-ready &&
-p.playbackState == Player.STATE_BUFFERING
-) {
-scheduleBufferingRecovery(p, req.url)
 }
 }
-override fun onPlayerError(error: PlaybackException) {
-if (current?.url != req.url || exo !== p) return
-Log.e(
-TAG,
-"Media3 error code=${error.errorCode} host=${Uri.parse(req.url).host}",
-error
+},
+onError = {
+if (current === req) fallBackToWebsite(req.url)
+}
 )
-fallBackToWebsite(req.url)
-}
-})
+session = p
 p.volume = if (muted) 0f else 1f
-p.setMediaItem(
-MediaItem.Builder()
-.setUri(req.url)
-.setMimeType(mime)
-.build()
-)
-p.prepare()
-p.playWhenReady = true
 val timeoutTask = Runnable {
-if (current?.url == req.url && exo === p && !ready) {
-Log.w(
-TAG,
-"Initial stream did not reach READY within ${STARTUP_TIMEOUT_MS / 1000}s"
-)
+if (current === req && session === p && !ready) {
+Log.w(TAG, "VLC startup timed out; returning to website playback")
 fallBackToWebsite(req.url)
 }
 }
 timeout = timeoutTask
 handler.postDelayed(timeoutTask, STARTUP_TIMEOUT_MS)
-Log.d(
-TAG,
-"Waiting up to ${STARTUP_TIMEOUT_MS / 1000}s for initial stream readiness"
-)
+p.start(req.url, req.origin, req.userAgent)
+} catch (error: Exception) {
+Log.w(TAG, "Unable to start VLC", error)
+fallBackToWebsite(req.url)
+} catch (error: LinkageError) {
+Log.w(TAG, "VLC native library unavailable", error)
+fallBackToWebsite(req.url)
+}
 }
 
 private fun handleControlClick(box: Box) {
 if (muted) {
 muted = false
-exo?.volume = 1f
+session?.volume = 1f
 button?.text = "Full screen"
 return
 }
@@ -604,27 +537,28 @@ onFullscreenRequested()
 
 private fun fallBackToWebsite(url: String) {
 if (current?.url != url) return
+current?.let { retryGate.block(it.frameId, it.origin) }
 onFailed(url)
 close(suppressCurrent = true)
 }
 
 private fun scheduleBufferingRecovery(
-player: ExoPlayer,
+player: VlcPlaybackSession,
 url: String
 ) {
 if (bufferingTimeout != null ||
 attemptedBufferingRecovery ||
 !ready ||
 !player.playWhenReady ||
-player.playbackState != Player.STATE_BUFFERING
+!player.isBuffering
 ) return
 val task = Runnable {
 bufferingTimeout = null
-if (exo !== player ||
+if (session !== player ||
 current?.url != url ||
 !ready ||
 !player.playWhenReady ||
-player.playbackState != Player.STATE_BUFFERING ||
+!player.isBuffering ||
 attemptedBufferingRecovery
 ) return@Runnable
 attemptedBufferingRecovery = true
@@ -649,8 +583,12 @@ timeout = null
 }
 
 private fun updateHolderVisibility() {
-holder?.visibility =
-if (ready && positionVisible) View.VISIBLE else View.INVISIBLE
+holder?.let {
+// A TextureView must draw while VLC prepares its video output.
+it.visibility = if (positionVisible) View.VISIBLE else View.INVISIBLE
+it.alpha = if (ready) 1f else 0.01f
+}
+button?.visibility = if (ready && !fullscreen) View.VISIBLE else View.INVISIBLE
 }
 
 private fun position(box: Box) {
@@ -796,16 +734,16 @@ fun isActive() = current != null
 fun isNativePlaybackActive() = nativePlaybackActive
 
 // Remote media shortcuts must control the player that actually owns playback.
-// Never dispatch a shortcut to the dormant HTML player while Media3 is active.
+// Never dispatch a shortcut to the dormant HTML player while VLC is active.
 fun toggleNativePlayback(): Boolean {
-val player = exo ?: return false
+val player = session ?: return false
 if (!nativePlaybackActive || current == null) return false
 if (player.playWhenReady) player.pause() else player.play()
 return true
 }
 
 fun stopNativePlayback(): Boolean {
-val player = exo ?: return false
+val player = session ?: return false
 if (!nativePlaybackActive || current == null) return false
 // Pause without closing the overlay: closing would reactivate the website
 // player and unexpectedly start the same broadcast a second time.
@@ -814,42 +752,18 @@ return true
 }
 
 fun seekNativePlayback(offsetMs: Long): Boolean {
-val player = exo ?: return false
+val player = session ?: return false
 if (!nativePlaybackActive || current == null) return false
 // For nonseekable live streams consume the shortcut, but never ask Gecko to
-// seek the paused website player beneath the Media3 overlay.
-if (player.isCurrentMediaItemSeekable &&
-player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)) {
-player.seekTo((player.currentPosition + offsetMs).coerceAtLeast(0L))
-}
+// seek the paused website player beneath the VLC overlay.
+player.seekBy(offsetMs)
 return true
-}
-
-private fun catchUpLiveStreamOnFullscreenExit() {
-val player = exo ?: return
-if (!ready ||
-!player.isCommandAvailable(
-Player.COMMAND_GET_CURRENT_MEDIA_ITEM
-) ||
-!player.isCommandAvailable(
-Player.COMMAND_SEEK_TO_DEFAULT_POSITION
-) ||
-!player.isCurrentMediaItemLive
-) return
-val offsetMs = player.currentLiveOffset
-if (offsetMs == C.TIME_UNSET || offsetMs < 60_000L) return
-Log.i(
-TAG,
-"Live stream behind by ${offsetMs / 1000}s; seeking to live on fullscreen exit"
-)
-player.seekToDefaultPosition()
 }
 
 fun handleBack(): Boolean {
 if (current == null) return false
 if (fullscreen) {
 fullscreen = false
-catchUpLiveStreamOnFullscreenExit()
 geometryCutoff = System.currentTimeMillis()
 oldUiFlags?.let {
 activity.window.decorView.systemUiVisibility = it
@@ -887,7 +801,7 @@ cancelBufferingTimeout()
 attemptedBufferingRecovery = false
 if (suppressCurrent) {
 current?.url?.let {
-skippedMedia3Urls.add(it)
+skippedNativeUrls.add(it)
 cooldown[it] = SystemClock.uptimeMillis() + 120000L
 }
 }
@@ -913,9 +827,8 @@ CursorDrawerDelegate.touchInterceptor = null
 if (CursorDrawerDelegate.overlayRedrawHook === cursorRedrawHook) {
 CursorDrawerDelegate.overlayRedrawHook = null
 }
-playerView?.player = null
-exo?.release()
-exo = null
+session?.release()
+session = null
 holder?.let { root.removeView(it) }
 holder = null
 playerView = null
