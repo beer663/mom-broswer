@@ -1,4 +1,3 @@
-
 plugins {
     id("tvbro.android.application")
     alias(libs.plugins.ksp)
@@ -20,7 +19,6 @@ android {
             annotationProcessorOptions {
                 arguments += mapOf(
                     "room.incremental" to "true",
-                    //used when AppDatabase @Database annotation exportSchema = true. Useful for migrations
                     "room.schemaLocation" to "$projectDir/schemas"
                 )
             }
@@ -47,7 +45,10 @@ android {
             isDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             signingConfig = if (System.getenv("KEYSTORE_PATH") != null)
                 signingConfigs.getByName("release") else null
         }
@@ -70,7 +71,6 @@ android {
         }
         create("google") {
             dimension = "appstore"
-            //now auto-update violates Google Play policies
             buildConfigField("Boolean", "BUILT_IN_AUTO_UPDATE", "false")
         }
         create("foss") {
@@ -81,7 +81,7 @@ android {
 
         create("geckoIncluded") {
             dimension = "webengine"
-            minSdk = 26 // geckoview requires minSdk 26
+            minSdk = 26
         }
         create("geckoExcluded") {
             dimension = "webengine"
@@ -101,11 +101,8 @@ android {
 }
 
 dependencies {
-    // Phase 7: optional native HLS / DASH player; GeckoView remains the browser engine.
-    implementation("androidx.media3:media3-exoplayer:1.5.1")
-    implementation("androidx.media3:media3-exoplayer-hls:1.5.1")
-    implementation("androidx.media3:media3-exoplayer-dash:1.5.1")
-    implementation("androidx.media3:media3-ui:1.5.1")
+    // Embedded VLC playback; GeckoView remains the browser engine.
+    implementation("org.videolan.android:libvlc-all:3.7.7")
     implementation(project(":app:common"))
     "geckoIncludedImplementation"(project(":app:gecko"))
     "geckoIncludedImplementation"(libs.geckoview)
