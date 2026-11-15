@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "tvbro-generic",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "description": "TV Bro Generic Addon",
   "browser_specific_settings": {
     "gecko": {
