@@ -820,6 +820,43 @@ updateHolderVisibility()
 fun isActive() = current != null
 fun isNativePlaybackActive() = nativePlaybackActive
 
+/** Media remote shortcuts must control the active native player, not paused HTML. */
+fun toggleNativePlayback(): Boolean {
+    val player = ijk ?: return false
+    if (!nativePlaybackActive) return false
+    return runCatching {
+        if (player.isPlaying) player.pause() else player.start()
+        true
+    }.getOrElse { error ->
+        Log.w(TAG, "IJK media play/pause shortcut failed", error)
+        true // Do not dispatch a duplicate key to the website player.
+    }
+}
+
+/** Stop just this stream. The website and server choices remain available. */
+fun stopNativePlayback(): Boolean {
+    if (!nativePlaybackActive || ijk == null) return false
+    close(suppressCurrent = true)
+    return true
+}
+
+/** Consume media seek keys for live/unknown-length streams without seeking HTML. */
+fun seekNativePlayback(deltaMs: Long): Boolean {
+    val player = ijk ?: return false
+    if (!nativePlaybackActive) return false
+    runCatching {
+        val duration = player.duration
+        // Typical live HLS feeds have no finite seekable duration.
+        if (duration > 0L) {
+            val destination = (player.currentPosition + deltaMs).coerceIn(0L, duration)
+            player.seekTo(destination)
+        }
+    }.onFailure { error ->
+        Log.w(TAG, "IJK media seek shortcut unavailable", error)
+    }
+    return true
+}
+
 // Keep the same IJK playback instance and its live position when leaving fullscreen.
 
 fun handleBack(): Boolean {

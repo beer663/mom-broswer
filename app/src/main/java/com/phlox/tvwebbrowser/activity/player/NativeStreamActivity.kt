@@ -1,204 +1,143 @@
 package com.phlox.tvwebbrowser.activity.player
 
 import android.app.Activity
-import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
-import android.view.WindowManager
+import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
-import org.videolan.libvlc.util.VLCVideoLayout
+import android.widget.Toast
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 
-/** Direct stream playback. Website video normally uses InlineStreamPlayer. */
+/** Direct HLS/DASH player. Mirrors the GeckoView overlay controls for TV remote use. */
 class NativeStreamActivity : Activity() {
     companion object {
         const val EXTRA_URL = "native_stream_url"
         const val EXTRA_REFERER = "native_stream_referer"
         const val EXTRA_FAILED = "native_stream_failed"
     }
-
-    private val handler = Handler(Looper.getMainLooper())
-    private var session: VlcPlaybackSession? = null
+    private var player: ExoPlayer? = null
+    private lateinit var playerView: PlayerView
     private lateinit var overlayButton: Button
-    private var unmuted = false
-    private var ready = false
-    private var finished = false
-    private val startupTimeout = Runnable { fail() }
-    private val bufferingTimeout = Runnable { fail() }
+    private var isUnmuted = false
 
-    private fun dp(value: Int) =
-        (value * resources.displayMetrics.density + .5f).toInt()
+    private fun dp(value: Int) = (value * resources.displayMetrics.density + .5f).toInt()
 
     private fun immersive() {
         @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            )
+        window.decorView.systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_FULLSCREEN
+            or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY)
+    }
+
+    private fun button(label: String): Button = Button(this).apply {
+        text = label
+        isAllCaps = false
+        setTextColor(Color.WHITE)
+        textSize = 13f
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        background = GradientDrawable().apply {
+            setColor(Color.rgb(48, 54, 61))
+            cornerRadius = dp(26).toFloat()
+            setStroke(dp(1), Color.rgb(216, 222, 232))
+        }
+        isFocusable = true
+        isFocusableInTouchMode = false
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         immersive()
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-
-        val root = FrameLayout(this)
-        val video = VLCVideoLayout(this)
-        root.addView(video, FrameLayout.LayoutParams(-1, -1))
-
-        overlayButton = Button(this).apply {
-            text = "Unmute"
-            isAllCaps = false
-            setTextColor(Color.WHITE)
-            textSize = 13f
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-            background = GradientDrawable().apply {
-                setColor(Color.rgb(48, 54, 61))
-                cornerRadius = dp(26).toFloat()
-                setStroke(dp(1), Color.rgb(216, 222, 232))
-            }
-            isFocusable = true
+        playerView = PlayerView(this).apply {
+            useController = true
+            controllerAutoShow = true
+            layoutParams = FrameLayout.LayoutParams(-1, -1)
         }
-
-        root.addView(
-            overlayButton,
-            FrameLayout.LayoutParams(
-                dp(124),
-                dp(48),
-                Gravity.TOP or Gravity.LEFT
-            ).apply {
-                leftMargin = dp(8)
-                topMargin = dp(8)
-            }
-        )
-
+        val root = FrameLayout(this)
+        root.addView(playerView)
+        // Keep one button at the top-left of the video surface. The Fullscreen
+        // action replaces Unmute in exactly the same location after unmuting.
+        overlayButton = button("Unmute")
+        root.addView(overlayButton, FrameLayout.LayoutParams(dp(124), dp(48),
+            Gravity.TOP or Gravity.LEFT).apply {
+            leftMargin = dp(8)
+            topMargin = dp(8)
+        })
         overlayButton.setOnClickListener {
-            if (!unmuted) {
-                session?.volume = 1f
-                unmuted = true
+            if (!isUnmuted) {
+                player?.volume = 1f
+                isUnmuted = true
                 overlayButton.text = "Full screen"
             } else {
                 immersive()
+                playerView.showController()
                 overlayButton.visibility = View.GONE
             }
         }
-
+        // DPAD center and Back work even if the native controller is currently hidden.
         setContentView(root)
-        val url = intent.getStringExtra(EXTRA_URL)
-        val uri = url?.let {
-            runCatching { Uri.parse(it) }.getOrNull()
-        }
-        if (uri?.scheme != "http" && uri?.scheme != "https") {
-            fail()
+        val uri = intent.getStringExtra(EXTRA_URL)?.let { runCatching { Uri.parse(it) }.getOrNull() }
+        val scheme = uri?.scheme?.lowercase()
+        val path = uri?.path?.lowercase() ?: ""
+        if ((scheme != "http" && scheme != "https") ||
+            (!path.endsWith(".m3u8") && !path.endsWith(".mpd"))) {
+            finish()
             return
         }
-
-        try {
-            val playback = VlcPlaybackSession(
-                this,
-                video,
-                onReady = {
-                    ready = true
-                    handler.removeCallbacks(startupTimeout)
-                    overlayButton.requestFocus()
-                },
-                onBufferingChanged = { buffering ->
-                    if (buffering && ready) {
-                        handler.removeCallbacks(bufferingTimeout)
-                        handler.postDelayed(bufferingTimeout, 20_000L)
-                    } else {
-                        handler.removeCallbacks(bufferingTimeout)
-                    }
-                },
-                onError = { fail() }
-            )
-            session = playback
-            playback.volume = 0f
-            handler.postDelayed(startupTimeout, 30_000L)
-            playback.start(
-                checkNotNull(url),
-                intent.getStringExtra(EXTRA_REFERER),
-                null
-            )
-        } catch (_: Exception) {
-            fail()
-        } catch (_: LinkageError) {
-            fail()
-        }
-    }
-
-    private fun fail() {
-        if (finished) return
-        finished = true
-        handler.removeCallbacksAndMessages(null)
-        session?.release()
-        session = null
-        setResult(
-            RESULT_CANCELED,
-            Intent()
-                .putExtra(EXTRA_FAILED, true)
-                .putExtra(EXTRA_URL, intent.getStringExtra(EXTRA_URL))
-        )
-        finish()
+        val mime = if (path.endsWith(".m3u8")) MimeTypes.APPLICATION_M3U8 else MimeTypes.APPLICATION_MPD
+        val referer = intent.getStringExtra(EXTRA_REFERER)
+        val headers = if (referer?.startsWith("http") == true) mapOf("Referer" to referer) else emptyMap()
+        val httpFactory = androidx.media3.datasource.DefaultHttpDataSource.Factory()
+            .setDefaultRequestProperties(headers)
+            .setAllowCrossProtocolRedirects(true)
+        val dataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(this, httpFactory)
+        val mediaSourceFactory = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(dataSourceFactory)
+        val exo = ExoPlayer.Builder(this).setMediaSourceFactory(mediaSourceFactory).build()
+        player = exo
+        playerView.player = exo
+        exo.addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                Toast.makeText(this@NativeStreamActivity, "Native playback failed. Returning to browser.", Toast.LENGTH_LONG).show()
+                setResult(RESULT_CANCELED, android.content.Intent().putExtra(EXTRA_FAILED, true)
+                    .putExtra(EXTRA_URL, intent.getStringExtra(EXTRA_URL)))
+                finish()
+            }
+        })
+        exo.setMediaItem(MediaItem.Builder().setUri(uri!!).setMimeType(mime).build())
+        // Start muted so Unmute is a meaningful first action, like GeckoView.
+        exo.volume = 0f
+        exo.prepare()
+        exo.playWhenReady = true
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        when (keyCode) {
-            KeyEvent.KEYCODE_BACK,
-            KeyEvent.KEYCODE_ESCAPE -> {
-                finish()
-                return true
-            }
-            KeyEvent.KEYCODE_MENU -> {
-                overlayButton.visibility = View.VISIBLE
-                overlayButton.requestFocus()
-                return true
-            }
-            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
-                session?.let {
-                    if (it.playWhenReady) it.pause() else it.play()
-                }
-                return true
-            }
-            KeyEvent.KEYCODE_MEDIA_PLAY -> {
-                session?.play()
-                return true
-            }
-            KeyEvent.KEYCODE_MEDIA_PAUSE,
-            KeyEvent.KEYCODE_MEDIA_STOP -> {
-                session?.pause()
-                return true
-            }
-            KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                session?.seekBy(-10_000L)
-                return true
-            }
-            KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                session?.seekBy(10_000L)
-                return true
-            }
+        if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
+            finish()
+            return true
+        }
+        if (keyCode == KeyEvent.KEYCODE_MENU) {
+            overlayButton.visibility = View.VISIBLE
+            return true
         }
         return super.onKeyDown(keyCode, event)
     }
 
     override fun onStop() {
-        handler.removeCallbacksAndMessages(null)
-        session?.release()
-        session = null
-        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        playerView.player = null
+        player?.release()
+        player = null
         super.onStop()
-        if (!isFinishing) finish()
     }
 }
