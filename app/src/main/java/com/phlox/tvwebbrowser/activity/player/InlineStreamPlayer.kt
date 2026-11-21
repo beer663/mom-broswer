@@ -9,7 +9,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
-import android.view.LayoutInflater
 import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
@@ -19,7 +18,11 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
-import org.videolan.libvlc.util.VLCVideoLayout
+import android.graphics.SurfaceTexture
+import android.view.Surface
+import android.view.TextureView
+import tv.danmaku.ijk.media.player.IjkMediaPlayer
+import tv.danmaku.ijk.media.player.IMediaPlayer
 import com.phlox.tvwebbrowser.R
 import com.phlox.tvwebbrowser.widgets.cursor.CursorDrawerDelegate
 import java.util.Locale
@@ -34,9 +37,9 @@ private val onFailed: (String) -> Unit,
 private val onFullscreenRequested: () -> Unit = {}
 ) {
 private companion object {
-const val TAG = "MomBrowserVLC"
-const val STARTUP_TIMEOUT_MS = 30_000L
-const val REBUFFER_TIMEOUT_MS = 20_000L
+const val TAG = "MomBrowserIJK"
+const val STARTUP_TIMEOUT_MS = 120_000L
+const val REBUFFER_TIMEOUT_MS = 90_000L
 const val MAX_VIDEO_VIEW_SIZE = 16_384
 const val MAX_VIDEO_VIEW_AREA = 16_777_216.0
 }
@@ -68,14 +71,23 @@ val frameId: String
 private val handler = Handler(Looper.getMainLooper())
 private val boxes = mutableMapOf<String, Box>()
 private val cooldown = mutableMapOf<String, Long>()
-private val retryGate = NativePlaybackGate()
-private val skippedNativeUrls = mutableSetOf<String>()
+private val skippedMedia3Urls = mutableSetOf<String>()
 private var pending: Request? = null
 private var pendingReadyAt = 0L
 private var current: Request? = null
-private var session: VlcPlaybackSession? = null
+private var ijk: IjkMediaPlayer? = null
 private var holder: FrameLayout? = null
-private var playerView: VLCVideoLayout? = null
+// The outer video geometry stays identical to the stable Media3 build.
+// Only the video rendering engine changes for this test variant.
+private var playerView: FrameLayout? = null
+private var videoTexture: TextureView? = null
+private var renderSurface: Surface? = null
+private var videoPixelWidth = 0
+private var videoPixelHeight = 0
+private var videoSarNum = 1
+private var videoSarDen = 1
+private var preparing = false
+private var buffering = false
 private var button: Button? = null
 private var fullscreen = false
 private var lastInlineBox: Box? = null
@@ -89,7 +101,7 @@ private var nativePlaybackActive = false
 private var oldUiFlags: Int? = null
 private var timeout: Runnable? = null
 private var bufferingTimeout: Runnable? = null
-private var attemptedBufferingRecovery = false
+
 private val startPending = Runnable { startIfPositioned() }
 
 private val lifecycleObserver = object : DefaultLifecycleObserver {
@@ -229,17 +241,18 @@ private fun isPlaylist(url: String): Boolean {
 val uri = Uri.parse(url)
 if (uri.scheme != "http" && uri.scheme != "https") return false
 val path = uri.path?.lowercase(Locale.ROOT) ?: return false
-return path.endsWith(".m3u8") || path.endsWith(".mpd")
+// IJK/FFmpeg HLS is the test target. Leave DASH to the website instead
+// of swallowing a stream the IJK build might not support.
+return path.endsWith(".m3u8")
 }
 
 fun detect(url: String, origin: String, userAgent: String?, frameId: String) {
 if (!isPlaylist(url) || frameId.isBlank() || frameId.length > 128) return
-if (!retryGate.allows(frameId, origin)) return
 val active = current
 if (active != null && active.frameId != frameId) return
 val now = SystemClock.uptimeMillis()
 if ((cooldown[url] ?: 0L) > now) return
-if (url in skippedNativeUrls) {
+if (url in skippedMedia3Urls) {
 Log.d(TAG, "Already exited/failed this stream; leaving it with the website player")
 return
 }
@@ -368,7 +381,8 @@ if (restoreFullscreen) {
 activity.window.decorView.systemUiVisibility = restoreDecorFlags
 }
 ready = false
-attemptedBufferingRecovery = false
+preparing = false
+buffering = false
 cancelBufferingTimeout()
 }
 
@@ -377,10 +391,6 @@ if (!activity.lifecycle.currentState
 .isAtLeast(Lifecycle.State.RESUMED)
 ) return
 val req = pending ?: return
-if (!retryGate.allows(req.frameId, req.origin)) {
-pending = null
-return
-}
 val active = current
 if (active != null &&
 active.frameId != req.frameId) {
@@ -404,8 +414,8 @@ super.dispatchDraw(canvas)
 drawCursorOnPlayer(this, canvas)
 }
 }.apply {
-setBackgroundColor(Color.BLACK)
-tag = "mom_inline_stream_preparing"
+setBackgroundColor(Color.TRANSPARENT)
+tag = "mom_inline_stream_surface"
 elevation = dp(12).toFloat()
 isFocusable = false
 clipChildren = true
@@ -413,108 +423,204 @@ clipToPadding = true
 }
 holder = host
 root.addOnLayoutChangeListener(playerLayoutListener)
-val video = LayoutInflater.from(activity).inflate(
-R.layout.view_inline_stream_player,
-host,
-false
-) as VLCVideoLayout
+// TextureView can be resized without destroying the IJK playback session.
+// FrameLayout is the same page-positioned rectangle as the stable player.
+val video = FrameLayout(activity).apply {
+    setBackgroundColor(Color.BLACK)
+    clipChildren = true
+    clipToPadding = true
+}
 playerView = video
+val texture = TextureView(activity).apply {
+    isOpaque = true
+    setBackgroundColor(Color.BLACK)
+}
+videoTexture = texture
+video.addView(texture, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
+video.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> fitVideoContent() }
 host.addView(video, FrameLayout.LayoutParams(-1, -1))
 val control = Button(activity).apply {
-text = if (muted) "Unmute" else "Full screen"
-visibility = if (fullscreen) View.GONE else View.VISIBLE
-isAllCaps = false
-setTextColor(Color.WHITE)
-textSize = 13f
-typeface = Typeface.create(
-"sans-serif-medium",
-Typeface.NORMAL
-)
-background = GradientDrawable().apply {
-setColor(Color.rgb(48, 54, 61))
-cornerRadius = dp(26).toFloat()
-setStroke(dp(1), Color.rgb(216, 222, 232))
-}
-isFocusable = false
-isFocusableInTouchMode = false
-tag = "mom_inline_stream_button"
-setOnClickListener { handleControlClick(box) }
+    text = if (muted) "Unmute" else "Full screen"
+    visibility = View.GONE // wait for a rendered native frame
+    isAllCaps = false
+    setTextColor(Color.WHITE)
+    textSize = 13f
+    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    background = GradientDrawable().apply {
+        setColor(Color.rgb(48, 54, 61))
+        cornerRadius = dp(26).toFloat()
+        setStroke(dp(1), Color.rgb(216, 222, 232))
+    }
+    isFocusable = false
+    isFocusableInTouchMode = false
+    tag = "mom_inline_stream_button"
+    setOnClickListener { handleControlClick(box) }
 }
 button = control
 host.addView(
-control,
-FrameLayout.LayoutParams(
-dp(124),
-dp(48),
-Gravity.BOTTOM or Gravity.LEFT
-).apply {
-leftMargin = dp(8)
-bottomMargin = dp(8)
-}
+    control,
+    FrameLayout.LayoutParams(dp(124), dp(48), Gravity.BOTTOM or Gravity.LEFT).apply {
+        leftMargin = dp(8)
+        bottomMargin = dp(8)
+    }
 )
-root.addView(
-host,
-RelativeLayout.LayoutParams(dp(200), dp(120))
-)
+root.addView(host, RelativeLayout.LayoutParams(dp(200), dp(120)))
+// Keep the TextureView attached so it can acquire a SurfaceTexture.
+// Until a real video frame arrives, the website video remains unsuppressed.
 host.visibility = View.VISIBLE
-host.alpha = 0.01f
+video.alpha = 0.01f
 position(box)
+val p = try {
+    IjkMediaPlayer()
+} catch (failure: Throwable) {
+    Log.e(TAG, "IJK native decoder failed to initialize", failure)
+    fallBackToWebsite(req.url)
+    return
+}
+ijk = p
+texture.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+    override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
+        if (ijk !== p) return
+        attachVideoSurface(p, surfaceTexture)
+    }
+    override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
+        fitVideoContent()
+    }
+    override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
+        if (ijk === p) runCatching { p.setSurface(null) }
+        renderSurface?.release()
+        renderSurface = null
+        return true
+    }
+    override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) = Unit
+}
+texture.surfaceTexture?.let { attachVideoSurface(p, it) }
+p.setOnVideoSizeChangedListener { _, width, height, sarNum, sarDen ->
+    if (ijk === p) {
+        videoPixelWidth = width
+        videoPixelHeight = height
+        videoSarNum = if (sarNum > 0) sarNum else 1
+        videoSarDen = if (sarDen > 0) sarDen else 1
+        fitVideoContent()
+    }
+}
+p.setOnPreparedListener {
+    if (ijk === p && current?.url == req.url) {
+        preparing = false
+        runCatching { p.start() }.onFailure {
+            Log.w(TAG, "IJK start failed", it)
+            fallBackToWebsite(req.url)
+        }
+    }
+}
+p.setOnInfoListener { _, what, _ ->
+    if (ijk === p && current?.url == req.url) {
+        when (what) {
+            IMediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START -> {
+                if (!ready) {
+                    ready = true
+                    cancelTimeout()
+                    cancelBufferingTimeout()
+                    buffering = false
+                    updateHolderVisibility()
+                    CursorDrawerDelegate.touchInterceptor = cursorInterceptor
+                    CursorDrawerDelegate.overlayRedrawHook = cursorRedrawHook
+                    if (!nativePlaybackActive) {
+                        nativePlaybackActive = true
+                        onActiveChanged(true)
+                    }
+                }
+            }
+            IMediaPlayer.MEDIA_INFO_BUFFERING_START -> {
+                buffering = true
+                if (ready) scheduleBufferingRecovery(p, req.url)
+            }
+            IMediaPlayer.MEDIA_INFO_BUFFERING_END -> {
+                buffering = false
+                cancelBufferingTimeout()
+            }
+        }
+    }
+    true
+}
+p.setOnErrorListener { _, what, extra ->
+    if (ijk === p && current?.url == req.url) {
+        Log.e(TAG, "IJK error=$what/$extra, host=${Uri.parse(req.url).host}")
+        fallBackToWebsite(req.url)
+    }
+    true
+}
+p.setOnCompletionListener {
+    if (ijk === p && current?.url == req.url) fallBackToWebsite(req.url)
+}
 try {
-val p = VlcPlaybackSession(
-activity,
-video,
-onReady = {
-if (current === req && activity.lifecycle.currentState
-.isAtLeast(Lifecycle.State.RESUMED)) {
-ready = true
-holder?.tag = "mom_inline_stream_surface"
-cancelTimeout()
-updateHolderVisibility()
-CursorDrawerDelegate.touchInterceptor = cursorInterceptor
-CursorDrawerDelegate.overlayRedrawHook = cursorRedrawHook
-if (!nativePlaybackActive) {
-nativePlaybackActive = true
-onActiveChanged(true)
+    // Keep HLS and user-provided server routing; browser credentials are NOT
+    // silently copied into this native player. Unsupported streams fall back.
+    val headers = mutableMapOf<String, String>()
+    if (req.origin.startsWith("http://") || req.origin.startsWith("https://")) {
+        headers["Referer"] = req.origin
+    }
+    req.userAgent?.takeIf { it.isNotBlank() }?.let { headers["User-Agent"] = it }
+    p.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 1L)
+    p.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-handle-resolution-change", 1L)
+    p.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1L)
+    p.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", 60_000_000L)
+    p.setVolume(if (muted) 0f else 1f, if (muted) 0f else 1f)
+    p.setDataSource(req.url, headers)
+    preparing = true
+    p.prepareAsync()
+} catch (failure: Throwable) {
+    Log.e(TAG, "IJK cannot start this stream", failure)
+    fallBackToWebsite(req.url)
+    return
 }
-}
-},
-onBufferingChanged = { buffering ->
-if (current === req) {
-if (buffering && ready) {
-session?.let { scheduleBufferingRecovery(it, req.url) }
-} else {
-cancelBufferingTimeout()
-}
-}
-},
-onError = {
-if (current === req) fallBackToWebsite(req.url)
-}
-)
-session = p
-p.volume = if (muted) 0f else 1f
 val timeoutTask = Runnable {
-if (current === req && session === p && !ready) {
-Log.w(TAG, "VLC startup timed out; returning to website playback")
-fallBackToWebsite(req.url)
-}
+    if (current?.url == req.url && ijk === p && !ready) {
+        Log.w(TAG, "IJK did not render a video frame in ${STARTUP_TIMEOUT_MS / 1000}s")
+        fallBackToWebsite(req.url)
+    }
 }
 timeout = timeoutTask
 handler.postDelayed(timeoutTask, STARTUP_TIMEOUT_MS)
-p.start(req.url, req.origin, req.userAgent)
-} catch (error: Exception) {
-Log.w(TAG, "Unable to start VLC", error)
-fallBackToWebsite(req.url)
-} catch (error: LinkageError) {
-Log.w(TAG, "VLC native library unavailable", error)
-fallBackToWebsite(req.url)
+Log.d(TAG, "IJK HLS waiting up to ${STARTUP_TIMEOUT_MS / 1000}s for first video frame")
 }
+
+private fun attachVideoSurface(player: IjkMediaPlayer, surfaceTexture: SurfaceTexture) {
+    renderSurface?.release()
+    val surface = Surface(surfaceTexture)
+    renderSurface = surface
+    runCatching { player.setSurface(surface) }.onFailure {
+        Log.w(TAG, "Unable to attach IJK TextureView", it)
+    }
+}
+
+/** Always contain the full video in its site rectangle (ntv.cx included). */
+private fun fitVideoContent() {
+    val frame = playerView ?: return
+    val texture = videoTexture ?: return
+    val w = frame.width.takeIf { it > 0 } ?: return
+    val h = frame.height.takeIf { it > 0 } ?: return
+    val sourceAspect = if (videoPixelWidth > 0 && videoPixelHeight > 0) {
+        (videoPixelWidth.toDouble() * videoSarNum / videoSarDen) / videoPixelHeight
+    } else {
+        w.toDouble() / h
+    }
+    if (!sourceAspect.isFinite() || sourceAspect <= 0.0) return
+    val frameAspect = w.toDouble() / h
+    val fittedWidth = if (frameAspect > sourceAspect) (h * sourceAspect).roundToInt() else w
+    val fittedHeight = if (frameAspect > sourceAspect) h else (w / sourceAspect).roundToInt()
+    val ww = fittedWidth.coerceAtLeast(1)
+    val hh = fittedHeight.coerceAtLeast(1)
+    val existing = texture.layoutParams as? FrameLayout.LayoutParams
+    if (existing == null || existing.width != ww || existing.height != hh || existing.gravity != Gravity.CENTER) {
+        texture.layoutParams = FrameLayout.LayoutParams(ww, hh, Gravity.CENTER)
+    }
 }
 
 private fun handleControlClick(box: Box) {
 if (muted) {
 muted = false
-session?.volume = 1f
+ijk?.setVolume(1f, 1f)
 button?.text = "Full screen"
 return
 }
@@ -537,39 +643,20 @@ onFullscreenRequested()
 
 private fun fallBackToWebsite(url: String) {
 if (current?.url != url) return
-current?.let { retryGate.block(it.frameId, it.origin) }
 onFailed(url)
 close(suppressCurrent = true)
 }
 
-private fun scheduleBufferingRecovery(
-player: VlcPlaybackSession,
-url: String
-) {
-if (bufferingTimeout != null ||
-attemptedBufferingRecovery ||
-!ready ||
-!player.playWhenReady ||
-!player.isBuffering
-) return
-val task = Runnable {
-bufferingTimeout = null
-if (session !== player ||
-current?.url != url ||
-!ready ||
-!player.playWhenReady ||
-!player.isBuffering ||
-attemptedBufferingRecovery
-) return@Runnable
-attemptedBufferingRecovery = true
-Log.w(
-TAG,
-"Stream buffered for ${REBUFFER_TIMEOUT_MS / 1000}s after READY; using website player"
-)
-fallBackToWebsite(url)
-}
-bufferingTimeout = task
-handler.postDelayed(task, REBUFFER_TIMEOUT_MS)
+private fun scheduleBufferingRecovery(player: IjkMediaPlayer, url: String) {
+    if (bufferingTimeout != null || !ready || !buffering) return
+    val task = Runnable {
+        bufferingTimeout = null
+        if (ijk !== player || current?.url != url || !ready || !buffering) return@Runnable
+        Log.w(TAG, "IJK buffering for ${REBUFFER_TIMEOUT_MS / 1000}s; return to HTML")
+        fallBackToWebsite(url)
+    }
+    bufferingTimeout = task
+    handler.postDelayed(task, REBUFFER_TIMEOUT_MS)
 }
 
 private fun cancelBufferingTimeout() {
@@ -583,12 +670,11 @@ timeout = null
 }
 
 private fun updateHolderVisibility() {
-holder?.let {
-// A TextureView must draw while VLC prepares its video output.
-it.visibility = if (positionVisible) View.VISIBLE else View.INVISIBLE
-it.alpha = if (ready) 1f else 0.01f
-}
-button?.visibility = if (ready && !fullscreen) View.VISIBLE else View.INVISIBLE
+    holder?.visibility = if (positionVisible) View.VISIBLE else View.INVISIBLE
+    // Let the website continue playing until the first native video frame.
+    holder?.setBackgroundColor(if (ready) Color.BLACK else Color.TRANSPARENT)
+    playerView?.alpha = if (ready) 1f else 0.01f
+    button?.visibility = if (ready && positionVisible && !fullscreen) View.VISIBLE else View.GONE
 }
 
 private fun position(box: Box) {
@@ -725,6 +811,7 @@ Gravity.TOP or Gravity.LEFT
 leftMargin = videoLeft
 topMargin = videoTop
 }
+video.post { fitVideoContent() }
 }
 }
 updateHolderVisibility()
@@ -733,32 +820,7 @@ updateHolderVisibility()
 fun isActive() = current != null
 fun isNativePlaybackActive() = nativePlaybackActive
 
-// Remote media shortcuts must control the player that actually owns playback.
-// Never dispatch a shortcut to the dormant HTML player while VLC is active.
-fun toggleNativePlayback(): Boolean {
-val player = session ?: return false
-if (!nativePlaybackActive || current == null) return false
-if (player.playWhenReady) player.pause() else player.play()
-return true
-}
-
-fun stopNativePlayback(): Boolean {
-val player = session ?: return false
-if (!nativePlaybackActive || current == null) return false
-// Pause without closing the overlay: closing would reactivate the website
-// player and unexpectedly start the same broadcast a second time.
-player.pause()
-return true
-}
-
-fun seekNativePlayback(offsetMs: Long): Boolean {
-val player = session ?: return false
-if (!nativePlaybackActive || current == null) return false
-// For nonseekable live streams consume the shortcut, but never ask Gecko to
-// seek the paused website player beneath the VLC overlay.
-player.seekBy(offsetMs)
-return true
-}
+// Keep the same IJK playback instance and its live position when leaving fullscreen.
 
 fun handleBack(): Boolean {
 if (current == null) return false
@@ -798,10 +860,11 @@ root.removeOnLayoutChangeListener(playerLayoutListener)
 handler.removeCallbacks(startPending)
 cancelTimeout()
 cancelBufferingTimeout()
-attemptedBufferingRecovery = false
+buffering = false
+preparing = false
 if (suppressCurrent) {
 current?.url?.let {
-skippedNativeUrls.add(it)
+skippedMedia3Urls.add(it)
 cooldown[it] = SystemClock.uptimeMillis() + 120000L
 }
 }
@@ -827,11 +890,20 @@ CursorDrawerDelegate.touchInterceptor = null
 if (CursorDrawerDelegate.overlayRedrawHook === cursorRedrawHook) {
 CursorDrawerDelegate.overlayRedrawHook = null
 }
-session?.release()
-session = null
+videoTexture?.surfaceTextureListener = null
+ijk?.let { runCatching { it.setSurface(null) } }
+renderSurface?.release()
+renderSurface = null
+ijk?.let { runCatching { it.release() } }
+ijk = null
 holder?.let { root.removeView(it) }
 holder = null
 playerView = null
+videoTexture = null
+videoPixelWidth = 0
+videoPixelHeight = 0
+videoSarNum = 1
+videoSarDen = 1
 button = null
 current = null
 pending = null
