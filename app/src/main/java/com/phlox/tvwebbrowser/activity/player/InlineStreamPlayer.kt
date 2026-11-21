@@ -871,8 +871,9 @@ fun seekNativePlayback(deltaMs: Long): Boolean {
 // Keep the same IJK playback instance and its live position when leaving fullscreen.
 
 fun handleBack(): Boolean {
-if (current == null) return false
-if (fullscreen) {
+// Inline playback must survive Back so MainActivity can open its menu.
+// Closing here resumes the website's older paused position.
+if (current == null || !fullscreen) return false
 fullscreen = false
 geometryCutoff = System.currentTimeMillis()
 oldUiFlags?.let {
@@ -885,9 +886,6 @@ root.post {
 if (current != null && !fullscreen) {
 lastInlineBox?.let(::position)
 }
-}
-} else {
-close(suppressCurrent = true)
 }
 return true
 }
