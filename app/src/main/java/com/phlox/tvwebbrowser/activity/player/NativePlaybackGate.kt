@@ -1,10 +1,16 @@
 package com.phlox.tvwebbrowser.activity.player
 
 import java.net.URI
+import java.net.URLDecoder
 import java.util.Locale
 
 /** Prevent automatic native-player retries after failure, even if tokens change. */
 internal class NativePlaybackGate {
+    private companion object {
+        val ROTATING_PARAMETERS = setOf(
+            "token", "sig", "signature", "expires", "exp", "timestamp", "ts", "_"
+        )
+    }
     private val blockedFrames = linkedSetOf<String>()
     private val blockedPages = linkedSetOf<String>()
 
@@ -14,6 +20,10 @@ internal class NativePlaybackGate {
     fun block(frameId: String, origin: String) {
         blockedFrames.add(frameId)
         pageKey(origin)?.let(blockedPages::add)
+    }
+
+    fun releaseFrame(frameId: String) {
+        blockedFrames.remove(frameId)
     }
 
     private fun pageKey(origin: String): String? = try {
@@ -29,7 +39,15 @@ internal class NativePlaybackGate {
                 scheme == "https" && uri.port == 443 -> ""
                 else -> ":${uri.port}"
             }
-            "$scheme://$host$port${uri.rawPath?.ifEmpty { "/" } ?: "/"}"
+            // Keep channel IDs/names: generic player.php?id=... pages can
+            // share a path while selecting entirely different channels.
+            val query = uri.rawQuery.orEmpty().split('&').filter { part ->
+                part.isNotEmpty() && URLDecoder.decode(
+                    part.substringBefore('='), "UTF-8"
+                ).lowercase(Locale.ROOT) !in ROTATING_PARAMETERS
+            }.joinToString("&")
+            val suffix = if (query.isEmpty()) "" else "?$query"
+            "$scheme://$host$port${uri.rawPath?.ifEmpty { "/" } ?: "/"}$suffix"
         }
     } catch (_: Exception) {
         null
