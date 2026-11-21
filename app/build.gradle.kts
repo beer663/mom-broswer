@@ -104,8 +104,8 @@ dependencies {
     // Test build: GSY's maintained IJK/FFmpeg engine; ARMv7 only (no full GSY UI).
     // Leave legacy Media3 dependencies for NativeStreamActivity compilation.
     // Embedded HLS playback uses IJK in InlineStreamPlayer.kt.
-    implementation("io.github.carguo:gsyvideoplayer-java:13.3.0")
-    implementation("io.github.carguo:gsyvideoplayer-armv7a:13.3.0")
+    implementation("io.github.carguo:gsyvideoplayer-java:13.2.1")
+    implementation("io.github.carguo:gsyvideoplayer-armv7a:13.2.1")
 
     // Phase 7: optional native HLS / DASH player; GeckoView remains the browser engine.
     implementation("androidx.media3:media3-exoplayer:1.5.1")
