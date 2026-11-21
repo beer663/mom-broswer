@@ -433,7 +433,7 @@ val video = FrameLayout(activity).apply {
 playerView = video
 val texture = TextureView(activity).apply {
     isOpaque = true
-    setBackgroundColor(Color.BLACK)
+    // TextureView cannot have a background; the parent FrameLayout is black.
 }
 videoTexture = texture
 video.addView(texture, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
@@ -445,7 +445,10 @@ val control = Button(activity).apply {
     isAllCaps = false
     setTextColor(Color.WHITE)
     textSize = 13f
-    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    typeface = Typeface.create(
+        "sans-serif-medium",
+        Typeface.NORMAL
+    )
     background = GradientDrawable().apply {
         setColor(Color.rgb(48, 54, 61))
         cornerRadius = dp(26).toFloat()
@@ -479,20 +482,35 @@ val p = try {
 }
 ijk = p
 texture.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-    override fun onSurfaceTextureAvailable(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
+    override fun onSurfaceTextureAvailable(
+        surfaceTexture: SurfaceTexture,
+        width: Int,
+        height: Int
+    ) {
         if (ijk !== p) return
         attachVideoSurface(p, surfaceTexture)
     }
-    override fun onSurfaceTextureSizeChanged(surfaceTexture: SurfaceTexture, width: Int, height: Int) {
+
+    override fun onSurfaceTextureSizeChanged(
+        surfaceTexture: SurfaceTexture,
+        width: Int,
+        height: Int
+    ) {
         fitVideoContent()
     }
-    override fun onSurfaceTextureDestroyed(surfaceTexture: SurfaceTexture): Boolean {
+
+    override fun onSurfaceTextureDestroyed(
+        surfaceTexture: SurfaceTexture
+    ): Boolean {
         if (ijk === p) runCatching { p.setSurface(null) }
         renderSurface?.release()
         renderSurface = null
         return true
     }
-    override fun onSurfaceTextureUpdated(surfaceTexture: SurfaceTexture) = Unit
+
+    override fun onSurfaceTextureUpdated(
+        surfaceTexture: SurfaceTexture
+    ) = Unit
 }
 texture.surfaceTexture?.let { attachVideoSurface(p, it) }
 p.setOnVideoSizeChangedListener { _, width, height, sarNum, sarDen ->
@@ -560,9 +578,15 @@ try {
     if (req.origin.startsWith("http://") || req.origin.startsWith("https://")) {
         headers["Referer"] = req.origin
     }
-    req.userAgent?.takeIf { it.isNotBlank() }?.let { headers["User-Agent"] = it }
+    req.userAgent?.takeIf { it.isNotBlank() }?.let {
+        headers["User-Agent"] = it
+    }
     p.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 1L)
-    p.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-handle-resolution-change", 1L)
+    p.setOption(
+        IjkMediaPlayer.OPT_CATEGORY_PLAYER,
+        "mediacodec-handle-resolution-change",
+        1L
+    )
     p.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1L)
     p.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", 60_000_000L)
     p.setVolume(if (muted) 0f else 1f, if (muted) 0f else 1f)
@@ -576,7 +600,10 @@ try {
 }
 val timeoutTask = Runnable {
     if (current?.url == req.url && ijk === p && !ready) {
-        Log.w(TAG, "IJK did not render a video frame in ${STARTUP_TIMEOUT_MS / 1000}s")
+        Log.w(
+            TAG,
+            "IJK did not render a video frame in ${STARTUP_TIMEOUT_MS / 1000}s"
+        )
         fallBackToWebsite(req.url)
     }
 }
@@ -585,7 +612,10 @@ handler.postDelayed(timeoutTask, STARTUP_TIMEOUT_MS)
 Log.d(TAG, "IJK HLS waiting up to ${STARTUP_TIMEOUT_MS / 1000}s for first video frame")
 }
 
-private fun attachVideoSurface(player: IjkMediaPlayer, surfaceTexture: SurfaceTexture) {
+private fun attachVideoSurface(
+    player: IjkMediaPlayer,
+    surfaceTexture: SurfaceTexture
+) {
     renderSurface?.release()
     val surface = Surface(surfaceTexture)
     renderSurface = surface
@@ -607,12 +637,23 @@ private fun fitVideoContent() {
     }
     if (!sourceAspect.isFinite() || sourceAspect <= 0.0) return
     val frameAspect = w.toDouble() / h
-    val fittedWidth = if (frameAspect > sourceAspect) (h * sourceAspect).roundToInt() else w
-    val fittedHeight = if (frameAspect > sourceAspect) h else (w / sourceAspect).roundToInt()
+    val fittedWidth = if (frameAspect > sourceAspect) {
+        (h * sourceAspect).roundToInt()
+    } else {
+        w
+    }
+    val fittedHeight = if (frameAspect > sourceAspect) {
+        h
+    } else {
+        (w / sourceAspect).roundToInt()
+    }
     val ww = fittedWidth.coerceAtLeast(1)
     val hh = fittedHeight.coerceAtLeast(1)
     val existing = texture.layoutParams as? FrameLayout.LayoutParams
-    if (existing == null || existing.width != ww || existing.height != hh || existing.gravity != Gravity.CENTER) {
+    if (existing == null ||
+        existing.width != ww ||
+        existing.height != hh ||
+        existing.gravity != Gravity.CENTER) {
         texture.layoutParams = FrameLayout.LayoutParams(ww, hh, Gravity.CENTER)
     }
 }
@@ -647,12 +688,21 @@ onFailed(url)
 close(suppressCurrent = true)
 }
 
-private fun scheduleBufferingRecovery(player: IjkMediaPlayer, url: String) {
+private fun scheduleBufferingRecovery(
+    player: IjkMediaPlayer,
+    url: String
+) {
     if (bufferingTimeout != null || !ready || !buffering) return
     val task = Runnable {
         bufferingTimeout = null
-        if (ijk !== player || current?.url != url || !ready || !buffering) return@Runnable
-        Log.w(TAG, "IJK buffering for ${REBUFFER_TIMEOUT_MS / 1000}s; return to HTML")
+        if (ijk !== player ||
+            current?.url != url ||
+            !ready ||
+            !buffering) return@Runnable
+        Log.w(
+            TAG,
+            "IJK buffering for ${REBUFFER_TIMEOUT_MS / 1000}s; return to HTML"
+        )
         fallBackToWebsite(url)
     }
     bufferingTimeout = task
@@ -674,7 +724,8 @@ private fun updateHolderVisibility() {
     // Let the website continue playing until the first native video frame.
     holder?.setBackgroundColor(if (ready) Color.BLACK else Color.TRANSPARENT)
     playerView?.alpha = if (ready) 1f else 0.01f
-    button?.visibility = if (ready && positionVisible && !fullscreen) View.VISIBLE else View.GONE
+    button?.visibility =
+        if (ready && positionVisible && !fullscreen) View.VISIBLE else View.GONE
 }
 
 private fun position(box: Box) {
@@ -848,7 +899,8 @@ fun seekNativePlayback(deltaMs: Long): Boolean {
         val duration = player.duration
         // Typical live HLS feeds have no finite seekable duration.
         if (duration > 0L) {
-            val destination = (player.currentPosition + deltaMs).coerceIn(0L, duration)
+            val destination =
+                (player.currentPosition + deltaMs).coerceIn(0L, duration)
             player.seekTo(destination)
         }
     }.onFailure { error ->
