@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<org.videolan.libvlc.util.VLCVideoLayout
-    xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/inlineVlcPlayerView"
+<!--
+    Neutral host layout for the experimental IJKPlayer build.
+    Embedded IJK playback creates its own TextureView and positions it
+    programmatically in InlineStreamPlayer.kt. Keep this layout free of
+    VLC types so Android view binding can compile without libVLC.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/inlineVideoHost"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#000000" />
