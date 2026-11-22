@@ -49,7 +49,7 @@ CursorDrawerDelegate.Callback {
 
 companion object {
 const val ENGINE_NAME = "GeckoView"
-private const val APP_WEB_EXTENSION_VERSION = 64
+private const val APP_WEB_EXTENSION_VERSION = 65
 private const val ADGUARD_DNS_URL =
 "https://dns.adguard-dns.com/dns-query"
 
