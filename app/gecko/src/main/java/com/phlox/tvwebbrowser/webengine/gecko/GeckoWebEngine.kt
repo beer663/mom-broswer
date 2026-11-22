@@ -298,6 +298,7 @@ recoveryTarget = url?.takeIf { it.isNotBlank() && it != "about:blank" }
 ?: tab.url
 }
 pageRecoveryPending = true
+notifyBrowserForeground()
 }
 
 fun restoreCurrentPage(forceReload: Boolean = false) {
@@ -353,7 +354,11 @@ callback?.onVideoPresenceChanged(present)
 }
 
 override fun setNativeInlinePlayback(active: Boolean) {
+val token = homeLoadToken
+uiHandler.post {
 val canRestore = browserInForeground &&
+!pageRecoveryPending &&
+token == homeLoadToken &&
 activityLifecycle?.currentState
 ?.isAtLeast(Lifecycle.State.RESUMED) == true
 
@@ -362,7 +367,6 @@ val msg = JSONObject()
 .put("active", active)
 .put("restorePlayback", canRestore)
 
-uiHandler.post {
 for (delegate in contentPortDelegates.toList()) {
 try {
 delegate.port.postMessage(msg)
@@ -376,7 +380,7 @@ Log.w(TAG, "Unable to notify HTML video", e)
 private fun notifyBrowserForeground() {
 val msg = JSONObject()
 .put("type", "browserForeground")
-.put("foreground", browserInForeground)
+.put("foreground", browserInForeground && !pageRecoveryPending)
 
 for (delegate in contentPortDelegates.toList()) {
 try {
@@ -549,6 +553,10 @@ return SessionState.fromString(String(bytes, Charsets.UTF_8))
 }
 
 private var homeLoadToken = 0
+val navigationToken: Int
+get() = homeLoadToken
+var homeNavigationToken: Int = 0
+private set
 
 private fun isHomePageUrl(u: String?): Boolean {
 return u != null &&
@@ -622,9 +630,26 @@ reloadHomePageOnceExtensionReady(token, attempt + 1)
 }
 }
 
-override fun loadUrl(url: String) {
-if (!session.isOpen) session.open(runtime)
+private fun prepareNavigation(discardSavedState: Boolean = false) {
+// A user navigation supersedes the failed document and any pending recovery UI.
+if (pageRecoveryPending || discardSavedState) progressDelegate.sessionState = null
+pageRecoveryPending = false
+recoveryTarget = null
+contentDelegate.onNavigationRequested()
 homeLoadToken++
+}
+
+override fun loadUrl(url: String) {
+val returningHome = Config.HOME_URL_ALIAS == url || isHomePageUrl(url)
+if (returningHome) homeNavigationToken++
+prepareNavigation(returningHome)
+if (!session.isOpen) session.open(runtime)
+if (returningHome) {
+// Exit the website's fullscreen video before requesting the homepage.
+runCatching { session.exitFullScreen() }
+runCatching { mediaSessionDelegate.mediaSession?.stop() }
+runCatching { session.stop() }
+}
 
 if (Config.HOME_URL_ALIAS == url) {
 when (AppContext.provideConfig().homePageMode) {
@@ -648,6 +673,7 @@ override fun canGoForward(): Boolean =
 navigationDelegate.canGoForward
 
 override fun goForward() {
+prepareNavigation()
 session.goForward()
 }
 
@@ -695,6 +721,7 @@ override fun canGoBack(): Boolean =
 navigationDelegate.canGoBack
 
 override fun goBack() {
+prepareNavigation()
 session.goBack()
 }
 
@@ -723,6 +750,7 @@ android.widget.Toast.LENGTH_LONG
 }
 }
 } else {
+prepareNavigation()
 session.reload()
 }
 }
@@ -736,12 +764,9 @@ browserInForeground = true
 notifyBrowserForeground()
 
 if (pageRecoveryPending) {
-try {
-restoreCurrentPage()
-} catch (error: Exception) {
-Log.e(TAG, "Could not restore resumed page", error)
+// A killed renderer stays stopped until the user chooses Reload or Home.
+contentDelegate.showRecoveryOptions()
 return
-}
 } else if (!session.isOpen) {
 session.open(runtime)
 
