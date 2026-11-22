@@ -50,6 +50,7 @@ class MainSettingsView @JvmOverloads constructor(
         initWebViewAlgorithmicDarkeningWithDarkUiModeUI()
         initAllowAutoplayMediaUI()
         initWebEngineDebugUI()
+        initNativeHlsPlaybackUI()
         initKeepScreenOnUI()
         initJoystickAxesNavigationUI()
         initVirtualCursorPhysicsSettingsUI()
@@ -178,6 +179,19 @@ class MainSettingsView @JvmOverloads constructor(
                     vb.scWebEngineDebug.isChecked = false
                 }
                 .show()
+        }
+    }
+
+    private fun initNativeHlsPlaybackUI() {
+        if (!config.isWebEngineGecko()) {
+            vb.scNativeHlsPlayback.visibility = View.GONE
+            return
+        }
+        vb.scWebEngineDebug.nextFocusDownId = R.id.scNativeHlsPlayback
+        vb.scKeepScreenOn.nextFocusUpId = R.id.scNativeHlsPlayback
+        vb.scNativeHlsPlayback.isChecked = config.nativeHlsPlaybackEnabled
+        vb.scNativeHlsPlayback.setOnCheckedChangeListener { _, enabled ->
+            (activity as MainActivity).setNativeHlsPlaybackEnabled(enabled)
         }
     }
 
