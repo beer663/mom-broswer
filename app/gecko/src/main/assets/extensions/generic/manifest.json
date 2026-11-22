@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "tvbro-generic",
-  "version": "1.0.14",
+  "version": "1.0.15",
   "description": "TV Bro Generic Addon",
   "browser_specific_settings": {
     "gecko": {
@@ -44,7 +44,8 @@
     "tabs",
     "webRequest",
     "webRequestBlocking",
-    "<all_urls>"
+    "<all_urls>",
+    "cookies"
   ],
   "host_permissions": [
     "*://*/*"
