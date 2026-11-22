@@ -2,7 +2,7 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
+    android:layout_height="vertical"
     android:orientation="vertical"
     android:paddingLeft="22dp"
     android:paddingTop="5dp"
@@ -363,6 +363,18 @@
         android:layout_weight="0"
         />
   </LinearLayout>
+
+  <androidx.appcompat.widget.SwitchCompat
+      android:id="@+id/scNativeHlsPlayback"
+      android:layout_width="match_parent"
+      android:layout_height="wrap_content"
+      android:layout_marginTop="20dp"
+      android:minHeight="48dp"
+      android:nextFocusDown="@+id/scKeepScreenOn"
+      android:nextFocusUp="@+id/scWebEngineDebug"
+      android:text="@string/native_hls_playback"
+      android:textSize="16sp"
+      />
 
   <LinearLayout
       android:layout_width="match_parent"
