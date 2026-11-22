@@ -18,6 +18,11 @@ tvBroPort.onMessage.addListener(response => {
 // Capture the headers Gecko actually sent, including HttpOnly/partitioned cookies.
 // The origin object is forwarded unchanged by content.js to the app's native port.
 const TVBRO_PLAYLIST = /\.(m3u8|mpd)(?:[?#]|$)/i;
+const TVBRO_PLAYLIST_FILTER = {
+    urls: ["<all_urls>"],
+    types: ["xmlhttprequest", "media", "other"]
+};
+const tvbroPendingPlaylists = new Map();
 const tvbroReported = new Map();
 const TVBRO_HEADER_NAMES = new Map([
     ["user-agent", "User-Agent"], ["referer", "Referer"],
@@ -93,9 +98,31 @@ async function tvbroRequestContext(details, pageUrl) {
 }
 
 browser.webRequest.onBeforeSendHeaders.addListener(details => {
-    if (!TVBRO_PLAYLIST.test(details.url) || details.tabId < 0 || details.frameId < 0) return;
+    // Each redirect hop can have different headers and a different destination.
+    tvbroPendingPlaylists.delete(details.requestId);
+    if (details.method !== "GET" || !TVBRO_PLAYLIST.test(details.url) ||
+        details.tabId < 0 || details.frameId < 0) return;
     const origin = details.originUrl || details.documentUrl || "";
     if (!/^https?:\/\//i.test(origin)) return;
+
+    tvbroPendingPlaylists.set(details.requestId, { details, origin });
+    while (tvbroPendingPlaylists.size > 128) {
+        tvbroPendingPlaylists.delete(tvbroPendingPlaylists.keys().next().value);
+    }
+}, TVBRO_PLAYLIST_FILTER, ["requestHeaders"]);
+
+browser.webRequest.onErrorOccurred.addListener(details => {
+    tvbroPendingPlaylists.delete(details.requestId);
+}, TVBRO_PLAYLIST_FILTER);
+
+browser.webRequest.onCompleted.addListener(details => {
+    const captured = tvbroPendingPlaylists.get(details.requestId);
+    tvbroPendingPlaylists.delete(details.requestId);
+    if (!captured || captured.details.url !== details.url ||
+        captured.details.tabId !== details.tabId || captured.details.frameId !== details.frameId) return;
+    if (!(details.statusCode >= 200 && details.statusCode < 300) ||
+        details.statusCode === 204 || details.statusCode === 205) return;
+
     const now = Date.now();
     const key = `${details.tabId}:${details.frameId}:${details.url}`;
     if (now - (tvbroReported.get(key) || 0) < 30000) return;
@@ -104,15 +131,16 @@ browser.webRequest.onBeforeSendHeaders.addListener(details => {
         if (now - when > 60000) tvbroReported.delete(entry);
     }
     while (tvbroReported.size > 128) tvbroReported.delete(tvbroReported.keys().next().value);
-    tvbroRequestContext(details, origin).then(context => {
-        browser.tabs.sendMessage(details.tabId, {
+    tvbroRequestContext(captured.details, captured.origin).then(context => {
+        if (!context.cookiesComplete) {
+            tvbroReported.delete(key);
+            return;
+        }
+        return browser.tabs.sendMessage(details.tabId, {
             type: "nativeStreamDetected", url: details.url, origin: context
-        }, { frameId: details.frameId }).catch(() => { tvbroReported.delete(key); });
+        }, { frameId: details.frameId });
     }).catch(() => { tvbroReported.delete(key); });
-}, {
-    urls: ["<all_urls>"],
-    types: ["xmlhttprequest", "media", "other"]
-}, ["requestHeaders"]);
+}, TVBRO_PLAYLIST_FILTER);
 
 const MEDIA_STREAM_URL =
     /\.(ts|m4s|m4v|m4a|aac|mp4|webm|mp3|m3u8|mpd)([?#]|$)/i;
