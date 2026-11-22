@@ -1,4 +1,3 @@
-
 package com.phlox.tvwebbrowser
 
 import android.annotation.SuppressLint
@@ -49,12 +48,14 @@ class Config(val prefs: SharedPreferences) {
         const val ENGINE_GECKO_VIEW = "GeckoView"
         const val ENGINE_WEB_VIEW = "WebView"
 
-        const val DEFAULT_ADBLOCK_LIST_URL = "https://easylist.to/easylist/easylist.txt"
+        const val DEFAULT_ADBLOCK_LIST_URL =
+            "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/ultimate.txt"
+        private const val ADBLOCK_ULTIMATE_MIGRATED_KEY = "adblock_ultimate_default_applied"
         val SearchEnginesTitles = arrayOf("Google", "Bing", "Yahoo!", "DuckDuckGo", "Yandex", "Startpage", "Custom")
         val SearchEnginesNames = arrayOf("google", "bing", "yahoo", "ddg", "yandex", "startpage", "custom")
         val SearchEnginesURLs = listOf("https://www.google.com/search?q=[query]", "https://www.bing.com/search?q=[query]",
-            "https://search.yahoo.com/search?p=[query]", "https://duckduckgo.com/?q=[query]",
-            "https://yandex.com/search/?text=[query]", "https://www.startpage.com/sp/search?query=[query]", "")
+            "https://duckduckgo.com/?q=[query]", "https://yandex.com/search/?text=[query]",
+            "https://www.startpage.com/sp/search?query=[query]", "")
         val SupportedWebEngines = arrayOf(ENGINE_GECKO_VIEW, ENGINE_WEB_VIEW)
         const val HOME_PAGE_URL = "https://tvbro.phlox.dev/appcontent/home/"
         //const val HOME_PAGE_URL = "http://10.0.2.2:5000/appcontent/home/"
@@ -83,7 +84,7 @@ class Config(val prefs: SharedPreferences) {
         get() = prefs.getBoolean(INCOGNITO_MODE_KEY, false)
         @SuppressLint("ApplySharedPref")
         set(value) {
-            prefs.edit().putBoolean(INCOGNITO_MODE_KEY, value).commit()
+            this.prefs.edit().putBoolean(INCOGNITO_MODE_KEY, value).commit()
         }
 
     var incognitoModeHintSuppress: Boolean
@@ -144,7 +145,6 @@ class Config(val prefs: SharedPreferences) {
     var homePageMode: HomePageMode
         get() = prefs.getInt(HOME_PAGE_MODE, 0)
             .let {
-                //ignore value if search engine as home page is set
                 if (prefs.getBoolean(SEARCH_ENGINE_AS_HOME_PAGE_KEY, false)) {
                     prefs.edit().remove(SEARCH_ENGINE_AS_HOME_PAGE_KEY).apply()
                     HomePageMode.SEARCH_ENGINE.ordinal
@@ -161,7 +161,7 @@ class Config(val prefs: SharedPreferences) {
             .let { if (it < 0 || it >= HomePageLinksMode.values().size) 0 else it }
             .let { HomePageLinksMode.values()[it] }
         set(value) {
-            prefs.edit().putInt(HOME_PAGE_SUGGESTIONS_MODE, value.ordinal).apply()
+            prefs.edit().putInt(HOME_PAGE_SUGGESTIONS_MODE, value).apply()
         }
 
     var homePage: String
@@ -178,7 +178,6 @@ class Config(val prefs: SharedPreferences) {
             if (!prefs.contains(WEB_ENGINE)) {
                 prefs.edit().putString(WEB_ENGINE, ENGINE_GECKO_VIEW).apply()
             }
-
             return prefs.getString(WEB_ENGINE, ENGINE_GECKO_VIEW)!!
         }
         set(value) {
@@ -204,12 +203,6 @@ class Config(val prefs: SharedPreferences) {
             prefs.edit().putBoolean(WEB_ENGINE_DEBUG_KEY, value).apply()
         }
 
-    /*var homePageVersionExtracted: Int
-        get() = prefs.getInt(HOME_PAGE_VERSION_EXTRACTED, 0)
-        set(value) {
-            prefs.edit().putInt(HOME_PAGE_VERSION_EXTRACTED, value).apply()
-        }*/
-
     var initialBookmarksSuggestionsLoaded: Boolean
         get() = prefs.getBoolean(INITIAL_BOOKMARKS_SUGGESTIONS_LOADED, false)
         set(value) {
@@ -232,13 +225,25 @@ class Config(val prefs: SharedPreferences) {
             prefs.edit().putLong(ADBLOCK_LAST_UPDATE_LIST_KEY, value).apply()
         }
 
+    init {
+        // Migrate the old default once; preserve other saved list choices.
+        if (!prefs.getBoolean(ADBLOCK_ULTIMATE_MIGRATED_KEY, false)) {
+            if (adBlockListURL.value.trim() in setOf(
+                    "https://easylist.to/easylist/easylist.txt",
+                    "http://easylist.to/easylist/easylist.txt"
+                )) {
+                adBlockListURL.value = DEFAULT_ADBLOCK_LIST_URL
+            }
+            prefs.edit().putBoolean(ADBLOCK_ULTIMATE_MIGRATED_KEY, true).apply()
+        }
+    }
+
     var appWebExtensionVersion: Int
         get() = prefs.getInt(APP_WEB_EXTENSION_VERSION_KEY, 0)
         set(value) {
             prefs.edit().putInt(APP_WEB_EXTENSION_VERSION_KEY, value).apply()
         }
 
-    //0 - not shown, any other value - app version code where notification already shown (to show only once after update)
     var notificationAboutEngineChangeShown: Int
         get() = prefs.getInt(NOTIFICATION_ABOUT_ENGINE_CHANGE_SHOWN_KEY, 0)
         set(value) {
