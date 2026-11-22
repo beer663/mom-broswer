@@ -24,6 +24,7 @@ import java.io.File
 import java.io.IOException
 import java.net.URL
 import java.net.HttpURLConnection
+import java.security.MessageDigest
 
 class AdblockModel : ActiveModel() {
     companion object {
@@ -36,6 +37,8 @@ class AdblockModel : ActiveModel() {
     }
 
     @Volatile private var client: AdBlockClient? = null
+    private var activeListHash: String? = null
+    private data class LoadedList(val client: AdBlockClient, val hash: String?)
     private var automaticUpdate: Job? = null
     private var refreshOnNextStart = false
     val clientLoading = ObservableValue(false)
@@ -76,7 +79,9 @@ class AdblockModel : ActiveModel() {
         try {
             // Install the saved list first, even when it is due for an update.
             if (client == null) {
-                client = withContext(Dispatchers.IO) { readSavedList() }
+                val saved = withContext(Dispatchers.IO) { readSavedList() }
+                client = saved?.client
+                activeListHash = saved?.hash
             }
             val now = System.currentTimeMillis()
             val age = now - config.adBlockListLastUpdate
@@ -86,11 +91,16 @@ class AdblockModel : ActiveModel() {
                 val source = config.adBlockListURL.value.trim().ifEmpty {
                     Config.DEFAULT_ADBLOCK_LIST_URL
                 }
-                val replacement = withContext(Dispatchers.IO) { downloadAndSaveList(source) }
+                val active = client
+                val activeHash = activeListHash
+                val replacement = withContext(Dispatchers.IO) {
+                    downloadAndSaveList(source, active, activeHash)
+                }
                 if (source == config.adBlockListURL.value.trim().ifEmpty {
                         Config.DEFAULT_ADBLOCK_LIST_URL
                     }) {
-                    client = replacement
+                    client = replacement.client
+                    activeListHash = replacement.hash
                     config.adBlockListLastUpdate = System.currentTimeMillis()
                     Log.i(TAG, "Ad-blocker list updated; next automatic refresh in 12 hours")
                 } else {
@@ -114,18 +124,31 @@ class AdblockModel : ActiveModel() {
         }
     }
 
-    private fun readSavedList(): AdBlockClient? {
+    private fun readSavedList(): LoadedList? {
         val saved = File(app.filesDir, SERIALIZED_LIST_FILE)
         if (!saved.isFile || saved.length() == 0L) return null
         return try {
-            AdBlockClient().takeIf { it.deserialize(saved.absolutePath) }
+            val loaded = AdBlockClient()
+            if (!loaded.deserialize(saved.absolutePath)) return null
+            // Bind the text fingerprint to this exact serialized cache. A stale or
+            // missing fingerprint simply causes one normal parse on the next update.
+            val hashes = runCatching {
+                File(app.filesDir, "$SERIALIZED_LIST_FILE.sha256").readLines()
+            }.getOrNull()
+            val textHash = if (hashes?.size == 2 && hashes[0].length == 64 &&
+                hashes[1] == fileHash(saved)) hashes[0] else null
+            LoadedList(loaded, textHash)
         } catch (error: Exception) {
             Log.w(TAG, "Saved ad-blocker list could not be loaded", error)
             null
         }
     }
 
-    private fun downloadAndSaveList(source: String): AdBlockClient {
+    private fun downloadAndSaveList(
+        source: String,
+        active: AdBlockClient?,
+        activeHash: String?
+    ): LoadedList {
         val url = URL(source)
         if (url.protocol != "https" && url.protocol != "http") {
             throw IOException("The ad-blocker list must use HTTP or HTTPS")
@@ -162,6 +185,11 @@ class AdblockModel : ActiveModel() {
             if (firstRule == null || firstRule.startsWith("<")) {
                 throw IOException("The download is empty or is not a filter list")
             }
+            val textHash = fileHash(downloaded)
+            if (active != null && activeHash == textHash) {
+                Log.i(TAG, "Filter rules unchanged; reusing the loaded ad-blocker list")
+                return LoadedList(active, textHash)
+            }
             val replacement = AdBlockClient()
             // Parse from disk to avoid holding a large list in a Java String too.
             if (!replacement.parseFile(downloaded.absolutePath)) {
@@ -171,14 +199,45 @@ class AdblockModel : ActiveModel() {
                 throw IOException("Ad-blocker list could not be saved")
             }
             // Commit only a fully downloaded, parsed and serialized replacement.
+            val binaryHash = fileHash(staged)
             if (!staged.renameTo(File(app.filesDir, SERIALIZED_LIST_FILE))) {
                 throw IOException("Ad-blocker list could not replace the saved copy")
             }
-            return replacement
+            // Metadata is optional; failure must not discard a working filter list.
+            saveFingerprint(textHash, binaryHash)
+            return LoadedList(replacement, textHash)
         } finally {
             (connection as? HttpURLConnection)?.disconnect()
             downloaded.delete()
             staged.delete()
+        }
+    }
+
+    private fun fileHash(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(16 * 1024)
+            while (true) {
+                val count = input.read(buffer)
+                if (count < 0) break
+                digest.update(buffer, 0, count)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
+
+    private fun saveFingerprint(textHash: String, binaryHash: String) {
+        var staged: File? = null
+        try {
+            staged = File.createTempFile("adblock-hash-", ".txt", app.filesDir)
+            staged.writeText("$textHash\n$binaryHash\n")
+            if (!staged.renameTo(File(app.filesDir, "$SERIALIZED_LIST_FILE.sha256"))) {
+                throw IOException("Could not save the filter-list fingerprint")
+            }
+        } catch (error: IOException) {
+            Log.w(TAG, "Filter-list fingerprint unavailable; updates will still work", error)
+        } finally {
+            staged?.delete()
         }
     }
 
