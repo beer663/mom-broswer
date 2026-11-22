@@ -15,36 +15,100 @@ tvBroPort.onMessage.addListener(response => {
     }
 });
 
-// Send detections through the requesting tab and frame.
-// Let Media3 attempt playback even when the browser sends cookies.
+// Capture the headers Gecko actually sent, including HttpOnly/partitioned cookies.
+// The origin object is forwarded unchanged by content.js to the app's native port.
 const TVBRO_PLAYLIST = /\.(m3u8|mpd)(?:[?#]|$)/i;
 const tvbroReported = new Map();
+const TVBRO_HEADER_NAMES = new Map([
+    ["user-agent", "User-Agent"], ["referer", "Referer"],
+    ["origin", "Origin"], ["accept", "Accept"],
+    ["accept-language", "Accept-Language"], ["authorization", "Authorization"]
+]);
+
+async function tvbroRequestContext(details, pageUrl) {
+    const headers = {};
+    const cookieHeaders = [];
+    let valid = true;
+    for (const header of details.requestHeaders || []) {
+        const lower = header.name.toLowerCase();
+        if (lower === "cookie") cookieHeaders.push(header.value || "");
+        const name = TVBRO_HEADER_NAMES.get(lower);
+        if (name) {
+            if (typeof header.value !== "string" || /[\r\n\0]/.test(header.value)) valid = false;
+            else headers[name] = header.value;
+        }
+    }
+    const context = {
+        version: 1, url: details.url, pageUrl, headers,
+        cookies: [], cookiesComplete: valid, capturedAt: Date.now()
+    };
+    const cookieHeader = cookieHeaders.join("; ");
+    if (!cookieHeader) return context;
+    if (!valid || cookieHeader.length > 16384 || /[\r\n\0]/.test(cookieHeader)) {
+        context.cookiesComplete = false;
+        return context;
+    }
+    let timer;
+    try {
+        const options = { url: details.url, firstPartyDomain: null, partitionKey: {} };
+        if (details.cookieStoreId) options.storeId = details.cookieStoreId;
+        const available = await Promise.race([
+            browser.cookies.getAll(options),
+            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("Cookie lookup timed out")), 2000); })
+        ]);
+        const host = new URL(details.url).hostname.toLowerCase();
+        const path = new URL(details.url).pathname || "/";
+        const pairs = cookieHeader.split(";").map(part => part.trim()).filter(Boolean);
+        if (pairs.length > 128) throw new Error("Too many cookies");
+        for (const pair of pairs) {
+            const equal = pair.indexOf("=");
+            if (equal <= 0) throw new Error("Invalid cookie");
+            const name = pair.slice(0, equal);
+            const value = pair.slice(equal + 1);
+            const matches = available.filter(cookie => {
+                const domain = cookie.domain.replace(/^\./, "").toLowerCase();
+                const domainMatches = host === domain || !cookie.hostOnly && host.endsWith("." + domain);
+                const cookiePath = cookie.path || "/";
+                const pathMatches = path === cookiePath || path.startsWith(cookiePath) &&
+                    (cookiePath.endsWith("/") || path[cookiePath.length] === "/");
+                return cookie.name === name && cookie.value === value && domainMatches && pathMatches;
+            }).sort((a, b) => b.path.length - a.path.length);
+            // Without matching metadata, keep playback in Gecko rather than guess its scope.
+            if (!matches.length) throw new Error("Cookie scope unavailable");
+            const cookie = matches[0];
+            const item = {
+                name, value, path: cookie.path || "/", secure: matches.some(candidate => candidate.secure === true)
+            };
+            const expirations = matches.map(candidate => candidate.expirationDate).filter(Number.isFinite);
+            if (expirations.length) item.expiresAt = Math.floor(Math.min(...expirations) * 1000);
+            context.cookies.push(item);
+        }
+    } catch (_) {
+        context.cookies = [];
+        context.cookiesComplete = false;
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
+    return context;
+}
 
 browser.webRequest.onBeforeSendHeaders.addListener(details => {
-    if (!TVBRO_PLAYLIST.test(details.url) ||
-        details.tabId < 0 ||
-        details.frameId < 0) return;
-
+    if (!TVBRO_PLAYLIST.test(details.url) || details.tabId < 0 || details.frameId < 0) return;
     const origin = details.originUrl || details.documentUrl || "";
     if (!/^https?:\/\//i.test(origin)) return;
-
     const now = Date.now();
     const key = `${details.tabId}:${details.frameId}:${details.url}`;
-
     if (now - (tvbroReported.get(key) || 0) < 30000) return;
     tvbroReported.set(key, now);
-
     for (const [entry, when] of tvbroReported) {
         if (now - when > 60000) tvbroReported.delete(entry);
     }
-
-    browser.tabs.sendMessage(details.tabId, {
-        type: "nativeStreamDetected",
-        url: details.url,
-        origin: origin
-    }, { frameId: details.frameId }).catch(() => {
-        tvbroReported.delete(key);
-    });
+    while (tvbroReported.size > 128) tvbroReported.delete(tvbroReported.keys().next().value);
+    tvbroRequestContext(details, origin).then(context => {
+        browser.tabs.sendMessage(details.tabId, {
+            type: "nativeStreamDetected", url: details.url, origin: context
+        }, { frameId: details.frameId }).catch(() => { tvbroReported.delete(key); });
+    }).catch(() => { tvbroReported.delete(key); });
 }, {
     urls: ["<all_urls>"],
     types: ["xmlhttprequest", "media", "other"]
