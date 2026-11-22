@@ -1,6 +1,7 @@
 package com.phlox.tvwebbrowser.webengine.gecko.delegates
 
 import android.util.Log
+import com.phlox.tvwebbrowser.Config
 import com.phlox.tvwebbrowser.webengine.gecko.GeckoWebEngine
 import com.phlox.tvwebbrowser.webengine.BrowserStreamRequest
 import org.json.JSONObject
@@ -13,12 +14,16 @@ class AppContentScriptPortDelegate(
 
     var hasVideo = false
     private var frameId: String? = null
+    private val homeNavigationToken = webEngine.homeNavigationToken
 
     override fun onPortMessage(message: Any, port: WebExtension.Port) {
         try {
             val json = message as? JSONObject ?: return
+            val type = json.optString("type")
+            // A late stream/geometry message from the page we left cannot take over Home.
+            if (type != "inlineFrameReleased" && homeNavigationToken != webEngine.homeNavigationToken) return
 
-            when (json.optString("type")) {
+            when (type) {
                 "inlineFrameReady" -> {
                     val id = json.optString("frameId")
                     if (frameId == null && id.isNotBlank() && id.length <= 128) {
@@ -36,6 +41,8 @@ class AppContentScriptPortDelegate(
                 }
 
                 "nativeStreamDetected" -> {
+                    val currentUrl = webEngine.url?.substringBefore('#')?.substringBefore('?')?.trimEnd('/')
+                    if (currentUrl == Config.HOME_PAGE_URL.trimEnd('/') || currentUrl == Config.HOME_URL_ALIAS) return
                     val url = json.optString("url")
                     val context = json.optJSONObject("origin")
                     val origin = context?.optString("pageUrl") ?: json.optString("origin")
