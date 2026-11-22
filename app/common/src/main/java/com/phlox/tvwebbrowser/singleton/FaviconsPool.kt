@@ -4,13 +4,10 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 import android.util.LruCache
-import android.webkit.WebChromeClient
-import android.webkit.WebView
 import com.phlox.tvwebbrowser.AppContext
 import com.phlox.tvwebbrowser.model.HostConfig
 import com.phlox.tvwebbrowser.utils.FaviconExtractor
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.URL
@@ -109,24 +106,8 @@ object FaviconsPool {
                     }
                     favicons.remove(icon)
                 }
-                //try to get favicon from webview
-                withContext(Dispatchers.Main) {
-                    WebView(AppContext.get()).apply {
-                        webChromeClient = object : WebChromeClient() {
-                            override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
-                                super.onReceivedIcon(view, icon)
-                                if (icon != null) {
-                                    Log.d(TAG, "get: favicon received from webview for $host")
-                                    cache.put(host, icon)
-                                    runBlocking {
-                                        saveFavicon(host, icon, hostConfig)
-                                    }
-                                }
-                            }
-                        }
-                        loadUrl(urlOrHost)
-                    }
-                }
+                // A missing icon must not open another browser in the background.
+                // Return null so the caller displays its existing default icon.
             }
         } catch (e: Exception) {
             e.printStackTrace()
