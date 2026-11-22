@@ -43,25 +43,15 @@ class MainSettingsView @JvmOverloads constructor(
 
     init {
         initWebBrowserEngineSettingsUI()
-
         initHomePageAndSearchEngineConfigUI()
-
         initUAStringConfigUI(context)
-
         initAdBlockConfigUI()
-
         initThemeSettingsUI()
-
         initWebViewAlgorithmicDarkeningWithDarkUiModeUI()
-
         initAllowAutoplayMediaUI()
-
         initWebEngineDebugUI()
-
         initKeepScreenOnUI()
-
         initJoystickAxesNavigationUI()
-
         initVirtualCursorPhysicsSettingsUI()
 
         vb.btnClearWebCache.setOnClickListener {
@@ -80,9 +70,7 @@ class MainSettingsView @JvmOverloads constructor(
 
         val adapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, Config.SupportedWebEngines)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-
         vb.spWebEngine.adapter = adapter
-
         vb.spWebEngine.setSelection(Config.SupportedWebEngines.indexOf(config.webEngine), false)
 
         vb.spWebEngine.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -139,9 +127,7 @@ class MainSettingsView @JvmOverloads constructor(
     private fun initThemeSettingsUI() {
         val adapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, context.resources.getStringArray(R.array.themes))
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-
         vb.spTheme.adapter = adapter
-
         vb.spTheme.setSelection(config.theme.value.ordinal, false)
 
         vb.spTheme.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
@@ -197,8 +183,7 @@ class MainSettingsView @JvmOverloads constructor(
 
     private fun initKeepScreenOnUI() {
         vb.scKeepScreenOn.isChecked = settingsModel.keepScreenOn.value
-
-        vb.scKeepScreenOn.setOnCheckedChangeListener { buttonView, isChecked ->
+        vb.scKeepScreenOn.setOnCheckedChangeListener { _, isChecked ->
             settingsModel.keepScreenOn.value = isChecked
         }
     }
@@ -216,26 +201,32 @@ class MainSettingsView @JvmOverloads constructor(
         val range = maxP - minP
         vb.sbCursorMaxSpeed.max = range
         vb.sbCursorAcceleration.max = range
+
         fun refreshValueLabels() {
             vb.tvCursorMaxSpeedValue.text = context.getString(R.string.cursor_physics_percent, config.cursorMaxSpeedPercent)
             vb.tvCursorAccelerationValue.text = context.getString(R.string.cursor_physics_percent, config.cursorAccelerationPercent)
         }
+
         vb.sbCursorMaxSpeed.progress = config.cursorMaxSpeedPercent - minP
         vb.sbCursorAcceleration.progress = config.cursorAccelerationPercent - minP
         refreshValueLabels()
+
         vb.sbCursorMaxSpeed.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 config.cursorMaxSpeedPercent = minP + progress
                 refreshValueLabels()
             }
+
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
+
         vb.sbCursorAcceleration.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 config.cursorAccelerationPercent = minP + progress
                 refreshValueLabels()
             }
+
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
             override fun onStopTrackingTouch(seekBar: SeekBar?) {}
         })
@@ -259,7 +250,6 @@ class MainSettingsView @JvmOverloads constructor(
             if (adblockModel.clientLoading.value) return@setOnClickListener
             saveAdBlockListUrl()
             adblockModel.loadAdBlockList(true)
-            it.isEnabled = false
         }
 
         updateAdBlockInfo()
@@ -278,12 +268,13 @@ class MainSettingsView @JvmOverloads constructor(
         val infoText = "${context.getString(R.string.last_update)}: $lastUpdate"
         vb.tvAdBlockerListInfo.text = infoText
         val loadingAdBlockList = adblockModel.clientLoading.value
+        vb.btnAdBlockerUpdate.isEnabled = !loadingAdBlockList
         vb.btnAdBlockerUpdate.visibility = if (loadingAdBlockList) View.GONE else View.VISIBLE
         vb.pbAdBlockerListLoading.visibility = if (loadingAdBlockList) View.VISIBLE else View.GONE
     }
 
     private fun initUAStringConfigUI(context: Context) {
-        if (config.userAgentString.value?.contains("TV Bro/1.0 ") == true) {//legacy ua string - now default one should be used
+        if (config.userAgentString.value?.contains("TV Bro/1.0 ") == true) {
             config.userAgentString.value = null
         }
         val selected = if (config.userAgentString.value == null) {
@@ -305,6 +296,7 @@ class MainSettingsView @JvmOverloads constructor(
             vb.etUAString.setText(config.userAgentString.value ?: "")
             vb.etUAString.requestFocus()
         }
+
         vb.spTitles.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>, view: View, position: Int, id: Long) {
                 if (position == settingsModel.userAgentStringTitles.size - 1 && vb.llUAString.visibility == View.GONE) {
@@ -315,9 +307,7 @@ class MainSettingsView @JvmOverloads constructor(
                 vb.etUAString.setText(settingsModel.uaStrings[position])
             }
 
-            override fun onNothingSelected(parent: AdapterView<*>) {
-
-            }
+            override fun onNothingSelected(parent: AdapterView<*>) {}
         }
     }
 
@@ -329,7 +319,6 @@ class MainSettingsView @JvmOverloads constructor(
 
         val adapter = ArrayAdapter(context, android.R.layout.simple_spinner_item, Config.SearchEnginesTitles)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-
         vb.spEngine.adapter = adapter
 
         if (selected != -1) {
@@ -341,6 +330,7 @@ class MainSettingsView @JvmOverloads constructor(
             vb.etUrl.setText(config.searchEngineURL.value)
             vb.etUrl.requestFocus()
         }
+
         vb.spEngine.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>, view: View, position: Int, id: Long) {
                 if (position == (Config.SearchEnginesTitles.size - 1)) {
@@ -381,7 +371,6 @@ class MainSettingsView @JvmOverloads constructor(
         homePageLinksSpinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
         vb.spHomePageLinks.adapter = homePageLinksSpinnerAdapter
         vb.spHomePageLinks.setSelection(settingsModel.homePageLinksMode.ordinal)
-
         vb.etCustomHomePageUrl.setText(settingsModel.homePage)
     }
 
