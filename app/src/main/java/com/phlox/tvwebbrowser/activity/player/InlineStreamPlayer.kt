@@ -24,6 +24,7 @@ import android.view.TextureView
 import tv.danmaku.ijk.media.player.IjkMediaPlayer
 import tv.danmaku.ijk.media.player.IMediaPlayer
 import com.phlox.tvwebbrowser.R
+import com.phlox.tvwebbrowser.webengine.BrowserStreamRequest
 import com.phlox.tvwebbrowser.widgets.cursor.CursorDrawerDelegate
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -65,7 +66,8 @@ private data class Request(
 val url: String,
 val origin: String,
 val userAgent: String?,
-val frameId: String
+val frameId: String,
+val browserRequest: BrowserStreamRequest?
 )
 
 private val handler = Handler(Looper.getMainLooper())
@@ -77,6 +79,7 @@ private var pending: Request? = null
 private var pendingReadyAt = 0L
 private var current: Request? = null
 private var ijk: IjkMediaPlayer? = null
+private var cookieProxy: CookieStreamProxy? = null
 private var holder: FrameLayout? = null
 // The outer video geometry stays identical to the stable Media3 build.
 // Only the video rendering engine changes for this test variant.
@@ -259,7 +262,8 @@ Log.d(TAG, "Already exited/failed this stream; leaving it with the website playe
 return
 }
 if (current?.url == url || pending?.url == url) return
-pending = Request(url, origin, userAgent, frameId)
+pending = Request(url, origin, userAgent, frameId,
+BrowserStreamRequest.current(url, origin, frameId))
 pendingReadyAt = now + 750L
 handler.removeCallbacks(startPending)
 handler.postDelayed(startPending, 750L)
@@ -561,20 +565,32 @@ p.setOnCompletionListener {
     if (ijk === p && current?.url == req.url) fallBackToWebsite(req.url)
 }
 try {
-    // Keep HLS and user-provided server routing; browser credentials are NOT
-    // silently copied into this native player. Unsupported streams fall back.
-    val headers = mutableMapOf<String, String>()
-    if (req.origin.startsWith("http://") || req.origin.startsWith("https://")) {
-        headers["Referer"] = req.origin
+    val captured = req.browserRequest
+    val headers = captured?.headers?.toMutableMap() ?: mutableMapOf<String, String>().apply {
+        if (req.origin.startsWith("http://") || req.origin.startsWith("https://")) {
+            put("Referer", req.origin)
+        }
+        req.userAgent?.takeIf { it.isNotBlank() && BrowserStreamRequest.safeHeader(it) }
+            ?.let { put("User-Agent", it) }
     }
-    req.userAgent?.takeIf { it.isNotBlank() }?.let { headers["User-Agent"] = it }
     p.setOnMediaCodecSelectListener(IjkDecoderSelector)
     p.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec", 1L)
     p.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "mediacodec-handle-resolution-change", 1L)
     p.setOption(IjkMediaPlayer.OPT_CATEGORY_PLAYER, "framedrop", 1L)
     p.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "timeout", 60_000_000L)
     p.setVolume(if (muted) 0f else 1f, if (muted) 0f else 1f)
-    p.setDataSource(req.url, headers)
+    if (captured?.requiresProxy == true) {
+        val proxy = CookieStreamProxy(captured)
+        cookieProxy = proxy
+        // Every remote URL is rewritten by the adapter. IJK sees only loopback HTTP.
+        p.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "protocol_whitelist", "http,tcp,crypto")
+        p.setOption(IjkMediaPlayer.OPT_CATEGORY_FORMAT, "http_persistent", 0L)
+        p.setDataSource(proxy.url)
+        Log.i(TAG, "Browser request credentials enabled for native stream; host=${Uri.parse(req.url).host}")
+    } else {
+        p.setDataSource(req.url, headers)
+        Log.d(TAG, "Native stream uses captured browser headers=${captured != null}")
+    }
     preparing = true
     p.prepareAsync()
 } catch (failure: Throwable) {
@@ -937,6 +953,8 @@ if (CursorDrawerDelegate.overlayRedrawHook === cursorRedrawHook) {
 CursorDrawerDelegate.overlayRedrawHook = null
 }
 videoTexture?.surfaceTextureListener = null
+cookieProxy?.close()
+cookieProxy = null
 ijk?.let { runCatching { it.setSurface(null) } }
 renderSurface?.release()
 renderSurface = null
