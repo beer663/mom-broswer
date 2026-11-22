@@ -1,6 +1,8 @@
 package com.phlox.tvwebbrowser.webengine.gecko.delegates
 
+import android.util.Log
 import com.phlox.tvwebbrowser.webengine.gecko.GeckoWebEngine
+import com.phlox.tvwebbrowser.webengine.BrowserStreamRequest
 import org.json.JSONObject
 import org.mozilla.geckoview.WebExtension
 
@@ -35,16 +37,28 @@ class AppContentScriptPortDelegate(
 
                 "nativeStreamDetected" -> {
                     val url = json.optString("url")
-                    val origin = json.optString("origin")
+                    val context = json.optJSONObject("origin")
+                    val origin = context?.optString("pageUrl") ?: json.optString("origin")
                     val id = frameId ?: return
                     if (json.optString("frameId") != id) return
 
                     if (url.isNotBlank() && origin.isNotBlank()) {
-                        webEngine.callback?.onNativeStreamDetected(
-                            url,
-                            origin,
-                            id
-                        )
+                        val callback = webEngine.callback ?: return
+                        if (context == null) {
+                            // Compatibility with an older installed extension.
+                            callback.onNativeStreamDetected(url, origin, id)
+                        } else {
+                            val request = try {
+                                BrowserStreamRequest.fromJson(url, origin, id, context)
+                            } catch (_: Exception) {
+                                // Skip this handoff while preserving any working native session.
+                                Log.i("MomBrowserHeaders", "No native handoff: browser request context unavailable")
+                                return
+                            }
+                            BrowserStreamRequest.withRequest(request) {
+                                callback.onNativeStreamDetected(url, origin, id)
+                            }
+                        }
                     }
                 }
 
