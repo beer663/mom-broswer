@@ -145,9 +145,22 @@ browser.webRequest.onCompleted.addListener(details => {
 const MEDIA_STREAM_URL =
     /\.(ts|m4s|m4v|m4a|aac|mp4|webm|mp3|m3u8|mpd)([?#]|$)/i;
 
+function isPlayerEntitlementRequest(details) {
+    try {
+        const source = new URL(details.documentUrl || details.originUrl || "");
+        const target = new URL(details.url);
+        return source.origin === "https://dembed.st" &&
+            target.origin === "https://entitlements.jwplayer.com";
+    } catch (_) {
+        return false;
+    }
+}
+
 browser.webRequest.onBeforeRequest.addListener(
     function (details) {
-        if (details.type === "media" || MEDIA_STREAM_URL.test(details.url)) {
+        // The embedded player needs its entitlement check to reach JW Player.
+        if (details.type === "media" || MEDIA_STREAM_URL.test(details.url) ||
+            isPlayerEntitlementRequest(details)) {
             return {};
         }
 
