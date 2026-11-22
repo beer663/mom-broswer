@@ -195,7 +195,7 @@ class Config(val prefs: SharedPreferences) {
         }
 
     var nativeHlsPlaybackEnabled: Boolean
-        get() = prefs.getBoolean(NATIVE_HLS_PLAYBACK, true)
+        get() = prefs.getBoolean(NATIVE_HLS_PLAYBACK, false)
         set(value) {
             prefs.edit().putBoolean(NATIVE_HLS_PLAYBACK, value).apply()
         }
