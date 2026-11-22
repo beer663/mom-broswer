@@ -290,19 +290,25 @@ mutableSetOf<AppContentScriptPortDelegate>()
 private var lastReportedVideoPresence = false
 private var browserInForeground = false
 private var pageRecoveryPending = false
+private var recoveryTarget: String? = null
 
 fun markRendererUnavailable() {
+if (!pageRecoveryPending) {
+recoveryTarget = url?.takeIf { it.isNotBlank() && it != "about:blank" }
+?: tab.url
+}
 pageRecoveryPending = true
 }
 
 fun restoreCurrentPage(forceReload: Boolean = false) {
-val target = url?.takeIf { it.isNotBlank() } ?: tab.url
+val target = recoveryTarget ?: url?.takeIf { it.isNotBlank() } ?: tab.url
 
 try {
 if (!session.isOpen) session.open(runtime)
 val state = progressDelegate.sessionState
 
-if (!forceReload && state != null) {
+// A killed renderer needs a fresh load; its saved document may no longer paint.
+if (!forceReload && !pageRecoveryPending && state != null) {
 try {
 session.restoreState(state)
 } catch (error: Exception) {
@@ -318,6 +324,7 @@ loadUrl(target)
 }
 
 pageRecoveryPending = false
+recoveryTarget = null
 } catch (error: Exception) {
 pageRecoveryPending = true
 throw error
@@ -524,6 +531,7 @@ if (!session.isOpen) session.open(runtime)
 
 session.restoreState(savedInstanceState)
 pageRecoveryPending = false
+recoveryTarget = null
 homeLoadToken++
 
 if (!extensionBackgroundReady) {
@@ -742,13 +750,17 @@ session.restoreState(it)
 }
 }
 
+session.setActive(true)
+session.setPriorityHint(GeckoSession.PRIORITY_HIGH)
 session.setFocused(true)
 }
 
 override fun onPause() {
 browserInForeground = false
 notifyBrowserForeground()
+if (!session.isOpen) return
 session.setFocused(false)
+session.setPriorityHint(GeckoSession.PRIORITY_DEFAULT)
 
 mediaSessionDelegate.mediaSession?.let {
 if (!mediaSessionDelegate.paused) it.pause()
@@ -822,6 +834,14 @@ if (isNightMode) 0xFF1B1B1B.toInt() else 0xFFE4E2DD.toInt()
 
 webView.setSession(session)
 
+if (session.isOpen) {
+session.setActive(true)
+session.setPriorityHint(
+if (browserInForeground) GeckoSession.PRIORITY_HIGH
+else GeckoSession.PRIORITY_DEFAULT
+)
+}
+
 if (session.isOpen &&
 previousSession != null &&
 previousSession != session
@@ -849,6 +869,11 @@ activeCallback = null
 callback = null
 val view = webView
 
+if (session.isOpen) {
+session.setFocused(false)
+session.setPriorityHint(GeckoSession.PRIORITY_DEFAULT)
+}
+
 if (view != null && view.session == session) {
 view.session?.setActive(false)
 view.releaseSession()
@@ -860,15 +885,29 @@ if (destroyTab) {
 homeLoadToken++
 mediaSessionDelegate.mediaSession?.stop()
 session.close()
+} else if (!tab.selected) {
+// On low-RAM TVs, retain tab history rather than a whole background page process.
+trimMemory()
 }
 }
 
 override fun trimMemory() {
+// Keep the selected page and its video alive. Discard only inactive sessions.
+if (tab.selected || browserInForeground) return
 val currentView = webView
 
-if (currentView != null && !currentView.isAttachedToWindow) {
-webView = null
+if (currentView?.session === session) {
+session.setActive(false)
+currentView.releaseSession()
 }
+if (session.isOpen) {
+homeLoadToken++
+session.close()
+Log.i(TAG, "Released an inactive tab session under memory pressure")
+}
+// progressDelegate retains the lightweight history state for reopening the tab.
+// The shared view may belong to another tab; never detach that tab's session.
+webView = null
 }
 
 override fun onPermissionsResult(
