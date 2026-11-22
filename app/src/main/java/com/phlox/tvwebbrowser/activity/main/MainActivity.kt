@@ -448,6 +448,11 @@ inlinePlayer.reset()
 tabsModel.currentTab.value?.webEngine?.reload()
 }
 
+fun setNativeHlsPlaybackEnabled(enabled: Boolean) {
+    config.nativeHlsPlaybackEnabled = enabled
+    if (!enabled) inlinePlayer.reset()
+}
+
 // Returns true only if the active inline Media3 session handled the key.
 // Otherwise ShortcutMgr forwards it to Gecko's website media session.
 fun handleNativeMediaShortcut(shortcut: Shortcut): Boolean {
@@ -1426,7 +1431,8 @@ val tab: WebTabState
 
 override fun onNativeStreamDetected(url: String, origin: String, frameId: String) {
 if (tabsModel.currentTab.value !== tab ||
-!config.isWebEngineGecko()) return
+!config.isWebEngineGecko() ||
+!config.nativeHlsPlaybackEnabled) return
 inlinePlayer.detect(
 url,
 origin,
@@ -1457,7 +1463,8 @@ measuredAt: Long,
 frameId: String
 ) {
 if (tabsModel.currentTab.value !== tab ||
-!config.isWebEngineGecko()) return
+!config.isWebEngineGecko() ||
+!config.nativeHlsPlaybackEnabled) return
 inlinePlayer.updateRect(
 frameUrl,
 x,
