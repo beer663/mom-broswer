@@ -33,6 +33,7 @@ class Config(val prefs: SharedPreferences) {
         const val HOME_PAGE_SUGGESTIONS_MODE = "home_page_suggestions_mode"
         const val WEB_ENGINE = "web_engine"
         const val ALLOW_AUTOPLAY_MEDIA = "allow_autoplay_media"
+        private const val NATIVE_HLS_PLAYBACK = "native_hls_playback"
         const val WEBVIEW_USE_ALGORITHMIC_DARKENING_WITH_DARK_UI_MODE_KEY =
             "webview_use_algorithmic_darkening_with_dark_ui_mode"
         const val WEB_ENGINE_DEBUG_KEY = "web_engine_debug"
@@ -191,6 +192,12 @@ class Config(val prefs: SharedPreferences) {
         get() = true
         set(value) {
             // ignored on purpose
+        }
+
+    var nativeHlsPlaybackEnabled: Boolean
+        get() = prefs.getBoolean(NATIVE_HLS_PLAYBACK, true)
+        set(value) {
+            prefs.edit().putBoolean(NATIVE_HLS_PLAYBACK, value).apply()
         }
 
     var webviewUseAlgorithmicDarkeningWithDarkUiMode: Boolean
