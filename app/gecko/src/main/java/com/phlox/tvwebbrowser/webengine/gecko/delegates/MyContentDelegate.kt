@@ -6,6 +6,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import com.phlox.tvwebbrowser.Config
 import com.phlox.tvwebbrowser.model.Download
 import com.phlox.tvwebbrowser.webengine.gecko.GeckoViewWithVirtualCursor
 import com.phlox.tvwebbrowser.webengine.gecko.GeckoWebEngine
@@ -20,78 +21,67 @@ class MyContentDelegate(
 private val webEngine: GeckoWebEngine
 ) : GeckoSession.ContentDelegate {
 private var activeAlert: Boolean = false
-private var lastRecoveryAt: Long? = null
-private var recoveryDialogVisible = false
+private var recoveryDialog: AlertDialog? = null
+
+fun onNavigationRequested() {
+recoveryDialog?.dismiss()
+recoveryDialog = null
+}
 
 private fun recoverRenderer(
 session: GeckoSession,
-reason: String,
-manual: Boolean = false
+reason: String
 ) {
 if (session !== webEngine.session) return
 Log.e("MomBrowserRenderer", "Renderer $reason")
 webEngine.markRendererUnavailable()
 activeAlert = false
+showRecoveryOptions()
+}
 
-if (!webEngine.tab.selected) return
+fun showRecoveryOptions() {
+if (!webEngine.tab.selected || recoveryDialog?.isShowing == true) return
 val callback = webEngine.callback ?: return
 val activity = callback.getActivity()
-val lifecycle =
-(activity as? LifecycleOwner)?.lifecycle ?: return
-if (!lifecycle.currentState.isAtLeast(
-Lifecycle.State.RESUMED
-)) return
+val lifecycle = (activity as? LifecycleOwner)?.lifecycle ?: return
+if (!lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) ||
+activity.isFinishing || activity.isDestroyed) return
 
-val url =
-webEngine.url?.takeIf { it.isNotBlank() } ?: webEngine.tab.url
-val now = SystemClock.elapsedRealtime()
-
-callback.onPageStarted(url)
+val token = webEngine.navigationToken
+callback.onPageStarted(webEngine.url ?: webEngine.tab.url)
 callback.onExitFullscreen()
 
-val last = lastRecoveryAt
-if (!manual && last != null && now - last < 60_000L) {
-if (!recoveryDialogVisible && !activity.isFinishing) {
-recoveryDialogVisible = true
-AlertDialog.Builder(activity)
+val dialog = AlertDialog.Builder(activity)
 .setTitle("Page stopped")
-.setMessage(
-"This page stopped repeatedly. Reload it to try again."
-)
+.setMessage("This page was closed. Choose Reload to try again, or return Home.")
 .setPositiveButton("Reload") { _, _ ->
-recoverRenderer(
-session,
-"manual reload",
-manual = true
-)
-}
-.setNegativeButton("Cancel", null)
-.setOnDismissListener {
-recoveryDialogVisible = false
-}
-.show()
-}
-return
-}
-
-lastRecoveryAt = now
+if (token == webEngine.navigationToken && webEngine.tab.selected) {
 try {
-webEngine.restoreCurrentPage(forceReload = manual)
-session.setActive(true)
-session.setFocused(true)
-Toast.makeText(
-activity,
-"Restoring page…",
-Toast.LENGTH_SHORT
-).show()
+webEngine.restoreCurrentPage(forceReload = true)
+webEngine.session.setActive(true)
+webEngine.session.setFocused(true)
 } catch (error: Exception) {
 Log.e("MomBrowserRenderer", "Page recovery failed", error)
-Toast.makeText(
-activity,
-"Page could not be restored. Try Reload.",
-Toast.LENGTH_LONG
-).show()
+Toast.makeText(activity, "Page could not be restored. Try Home.", Toast.LENGTH_LONG).show()
 }
+}
+}
+.setNegativeButton("Home") { _, _ ->
+if (token == webEngine.navigationToken && webEngine.tab.selected) {
+try {
+webEngine.loadUrl(Config.HOME_URL_ALIAS)
+} catch (error: Exception) {
+Log.e("MomBrowserRenderer", "Could not open Home", error)
+}
+}
+}
+.setNeutralButton("Cancel", null)
+.create()
+recoveryDialog = dialog
+dialog.setOnDismissListener {
+if (recoveryDialog === dialog) recoveryDialog = null
+}
+dialog.show()
 }
 
 override fun onTitleChange(
