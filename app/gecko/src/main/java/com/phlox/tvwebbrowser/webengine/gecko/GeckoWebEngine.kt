@@ -434,8 +434,8 @@ session.progressDelegate = progressDelegate
 session.contentDelegate = contentDelegate
 session.promptDelegate = promptDelegate
 session.permissionDelegate = permissionDelegate
-session.contentBlockingDelegate = contentBlockingDelegate
 session.historyDelegate = historyDelegate
+session.contentBlockingDelegate = contentBlockingDelegate
 session.mediaSessionDelegate = mediaSessionDelegate
 session.selectionActionDelegate = selectionActionDelegate
 
