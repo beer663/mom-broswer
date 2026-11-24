@@ -6,6 +6,13 @@ Mom Browser is a web browser for Android TV and Google TV, designed for use with
 
 Open **Releases** in this GitHub repository and download the `.apk` under **Assets**. The GeckoView build requires Android 8.0 or newer. The current build targets ARMv7-compatible devices.
 
+## Ad blocking and DNS
+
+- The built-in ad blocker uses the HaGeZi Ultimate filter list by default.
+- GeckoView uses AdGuard DNS over HTTPS for DNS lookups and domain-level filtering.
+- AdGuard DNS filtering stays active in GeckoView when you turn off the in-app ad blocker.
+
+
 ## What's new in v2.1.6
 
 - Native HLS playback defaults to Off. The browser keeps your saved preference if you already set it.
