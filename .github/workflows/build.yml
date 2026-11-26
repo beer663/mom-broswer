@@ -5,6 +5,8 @@ on:
   push:
     tags:
       - 'v*'
+  schedule:
+    - cron: '23 11 * * 1'
 
 jobs:
   build:
@@ -20,10 +22,18 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: |
+            17
+            21
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-37.1" "build-tools;36.0.0"
+
+      - name: Bundle the latest stable uBlock Origin
+        run: python3 .github/scripts/install-ublock.py
 
       - name: Build GeckoView version
         run: |
@@ -39,8 +49,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: debug-build
-          name: "Mom Browser Debug Build"
+          name: Mom Browser Debug Build
           files: release-files/Mom-Browser-Debug.apk
           draft: false
           prerelease: true
-          overwrite: true
